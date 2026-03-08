@@ -1,24 +1,22 @@
-# ===========================================================================
+# ---------------------------------------------------------------------------
 # Application 2: Proteogenomics (TCGA BRCA) - Protein Abundance Prediction
-# ===========================================================================
+# ---------------------------------------------------------------------------
 
 # Clear workspace
 rm(list = ls())
 
 # --- 1. Load Required Libraries ---
-# BiocManager::install("curatedTCGAData")
-# BiocManager::install("TCGAutils")
 library(curatedTCGAData)
 library(TCGAutils)
 library(glmnet)
 library(cellWise)
 library(randomGLM)
 library(caret)
-library(srlars) # Your package
+library(srlars) 
+library(regcell)
 
 # Load competitor scripts (adjust paths as needed)
 source("R/SparseShootingS/sparseShootingS.R")
-# library(regcell) # Ensure CR-Lasso is installed
 
 set.seed(456)
 

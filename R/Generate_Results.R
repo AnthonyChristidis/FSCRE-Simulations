@@ -1,4 +1,6 @@
-#' @description Simulation Master Runner.
+# ----------------------------------------
+# Generate Results for FSCRE Simulations
+# ----------------------------------------
 
 # Clear all memory
 rm(list = ls())
