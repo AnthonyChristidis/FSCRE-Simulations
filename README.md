@@ -15,7 +15,6 @@ This repository contains the R scripts and code required to reproduce the simula
     *   `Application_GDSC.R`: Script to reproduce the Pharmacogenomics (GDSC2) real data application (predicting drug response from RNA-seq).
     *   `Application_TCGA.R`: Script to reproduce the Proteogenomics (TCGA BRCA) real data application (predicting protein abundance from mRNA).
 *   **`SparseShootingS/`**: Contains the author-provided implementation of the Sparse Shooting S-estimator.
-*   **`CRLasso/`**: Contains wrappers/scripts for the CR-Lasso implementation.
 
 ## Prerequisites and Installation
 
