@@ -1,80 +1,76 @@
-# srlars
+# Fast and Scalable Cellwise-Robust Ensembles (FSCRE) - Simulations
 
-**Fast and Scalable Cellwise-Robust Ensemble (FSCRE)**
+This repository contains the R scripts and code required to reproduce the simulation studies and data analyses presented in the paper:
 
-[![CRAN status](https://www.r-pkg.org/badges/version/srlars)](https://cran.r-project.org/package=srlars)
+> **"Fast and Scalable Cellwise-Robust Ensembles for High-Dimensional Data"** 
+> *Anthony-Alexander Christidis, Jeyshinee Pyneeandee, Gabriela Cohen-Freue* (Under Review)
 
-The `srlars` package implements the FSCRE algorithm, a novel, multi-stage architecture designed to perform reliable variable selection and regression in high-dimensional settings plagued by cellwise contamination.
+The core methodology (the FSCRE algorithm) is implemented in the `srlars` R package, which is available on CRAN. This repository provides the scaffolding to generate the complex cellwise and casewise contamination scenarios, run the state-of-the-art competitors, and compile the performance metrics (MSPE, Precision, Recall, CPU Time).
 
-The method establishes a robust foundation using the Detect Deviating Cells (DDC) algorithm. It then partitions the predictor space by employing a competitive ensemble architecture, where a computationally efficient, correlation-based Least Angle Regression (LARS) engine proposes candidate variables and cross-validation arbitrates their assignment.
+## Repository Structure
 
-## Installation
+*   **`R/`**: Contains the core simulation scripts:
+    *   `generateData.R`: Generates high-dimensional data with block-collinearity and applies 5 distinct contamination scenarios (Casewise, Cellwise Marginal, Cellwise Correlation, and Mixtures).
+    *   `generatePred.R`: Fits the FSCRE algorithm alongside all baseline and state-of-the-art competitor methods, returning performance metrics.
+    *   `simFunc.R` & `generateOutput.R`: Wrapper functions to iterate over sparsity levels and contamination proportions.
+    *   `Test_Runner.R`: A lightweight script to verify the pipeline locally.
+*   **`SparseShootingS/`**: Contains the author-provided implementation of the Sparse Shooting S-estimator.
+*   **`CRLasso/`**: Contains wrappers/scripts for the CR-Lasso implementation.
 
-You can install the **stable** version from [CRAN](https://cran.r-project.org/package=srlars):
+## Prerequisites and Installation
+
+To run these simulations, you must install the `srlars` package along with several competitor and utility packages. 
+
+Run the following in R to set up your environment:
 
 ```r
+# 1. Install the proposed method from CRAN (or GitHub)
 install.packages("srlars")
-```
+# devtools::install_github("AnthonyChristidis/srlars") # Development version
 
-You can install the **development** version from [GitHub](https://github.com/AnthonyChristidis/srlars):
+# 2. Install CRAN dependencies and baselines
+install.packages(c("mvnfast", "glmnet", "cellWise", "randomGLM", "parallel", "pense", "robustHD"))
 
-```
+# 3. Install GitHub dependencies for competitors
 # install.packages("devtools")
-devtools::install_github("AnthonyChristidis/srlars")
+devtools::install_github("PengSU517/regcell") # For CR-Lasso
 ```
 
-## Usage
+## Reproducing the Simulations
 
-This example demonstrates how to use `srlars` for robust variable selection and regression on a high-dimensional dataset with artificial cellwise contamination.
+### 1. Fast Local Verification
+To ensure all packages are installed correctly and the data pipelines work on your machine, you can run the localized test script. This runs a miniaturized version of the simulation ($n=30, p=50, N=2$) across all scenarios.
 
+```bash
+Rscript R/Test_Runner.R
 ```
-library(srlars)
-library(mvnfast)
 
-# 1. Simulation Parameters
-n <- 50
-p <- 100
-p.active <- 20
-snr <- 3
-contamination.prop <- 0.1
-set.seed(0)
+This will output test results into a local `test_results/` directory.
 
-# 2. Data Generation (Block Correlation)
-sigma.mat <- matrix(0.2, p, p)
-for(group in 0:3) sigma.mat[(group*5+1):(group*5+5), (group*5+1):(group*5+5)] <- 0.8
-diag(sigma.mat) <- 1
+### 2. Full Simulation Execution
+The full simulation study is computationally intensive due to the high-dimensional setting ($p=500$) and the number of replications ($N=50$). To reproduce the full results, researchers should adapt the wrapper functions (`generateOutput.R`) to run in parallel on a high-performance computing environment. 
 
-true.beta <- c(runif(p.active, 0, 5)*(-1)^rbinom(p.active, 1, 0.7), rep(0, p - p.active))
-sigma <- as.numeric(sqrt(t(true.beta) %*% sigma.mat %*% true.beta)/sqrt(snr))
+## Citation
 
-x <- rmvn(n, mu = rep(0, p), sigma = sigma.mat)
-y <- x %*% true.beta + rnorm(n, 0, sigma)
+If you use this code or the `srlars` package in your research, please cite the corresponding paper:
 
-x_test <- rmvn(200, mu = rep(0, p), sigma = sigma.mat)
-y_test <- x_test %*% true.beta + rnorm(200, 0, sigma)
-
-# 3. Introduce Cellwise Contamination
-contamination_indices <- sample(1:(n * p), round(n * p * contamination.prop))
-x_train <- x
-x_train[contamination_indices] <- runif(length(contamination_indices), -10, 10)
-
-# 4. Fit the FSCRE Ensemble Model
-fit <- srlars(x_train, y,
-              n_models = 5,
-              tolerance = 0.01,
-              robust = TRUE,
-              compute_coef = TRUE)
-
-# View the disjoint sets of selected variables
-print(fit$active.sets)
-
-# 5. Prediction and Evaluation
-preds <- predict(fit, newx = x_test)
-mspe <- mean((y_test - preds)^2) / sigma^2
-print(paste("MSPE:", round(mspe, 3)))
+```bibtex
+@article{christidis2026fscre,
+  title={Fast and Scalable Cellwise-Robust Ensembles for High-Dimensional Data},
+  author={Christidis, Anthony-Alexander and Pyneeandee, Jeyshinee and Cohen-Freue, Gabriela},
+  journal={Under Review},
+  year={2026}
+}
 ```
 
 ## License
 
-This package is free and open source software, licensed under GPL (>= 2).
+This repository is licensed under GPL (>= 2).
+
+
+
+
+
+
+
 
