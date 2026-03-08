@@ -5,21 +5,21 @@ This repository contains the R scripts and code required to reproduce the simula
 > **"Fast and Scalable Cellwise-Robust Ensembles for High-Dimensional Data"** 
 > *Anthony-Alexander Christidis, Jeyshinee Pyneeandee, Gabriela Cohen-Freue* (Under Review)
 
-The core methodology (the FSCRE algorithm) is implemented in the `srlars` R package, which is available on CRAN. This repository provides the scaffolding to generate the complex cellwise and casewise contamination scenarios, run the state-of-the-art competitors, and compile the performance metrics (MSPE, Precision, Recall, CPU Time).
-
 ## Repository Structure
 
-*   **`R/`**: Contains the core simulation scripts:
+*   **`R/`**: Contains the core simulation and application scripts:
     *   `generateData.R`: Generates high-dimensional data with block-collinearity and applies 5 distinct contamination scenarios (Casewise, Cellwise Marginal, Cellwise Correlation, and Mixtures).
     *   `generatePred.R`: Fits the FSCRE algorithm alongside all baseline and state-of-the-art competitor methods, returning performance metrics.
     *   `simFunc.R` & `generateOutput.R`: Wrapper functions to iterate over sparsity levels and contamination proportions.
-    *   `Test_Runner.R`: A lightweight script to verify the pipeline locally.
+    *   `Test_Runner.R`: A lightweight script to verify the simulation pipeline locally.
+    *   `Application_GDSC.R`: Script to reproduce the Pharmacogenomics (GDSC2) real data application (predicting drug response from RNA-seq).
+    *   `Application_TCGA.R`: Script to reproduce the Proteogenomics (TCGA BRCA) real data application (predicting protein abundance from mRNA).
 *   **`SparseShootingS/`**: Contains the author-provided implementation of the Sparse Shooting S-estimator.
 *   **`CRLasso/`**: Contains wrappers/scripts for the CR-Lasso implementation.
 
 ## Prerequisites and Installation
 
-To run these simulations, you must install the `srlars` package along with several competitor and utility packages. 
+To run these scripts, you must install the `srlars` package, competitor methods, and the necessary Bioconductor packages for the real data applications. 
 
 Run the following in R to set up your environment:
 
@@ -29,17 +29,22 @@ install.packages("srlars")
 # devtools::install_github("AnthonyChristidis/srlars") # Development version
 
 # 2. Install CRAN dependencies and baselines
-install.packages(c("mvnfast", "glmnet", "cellWise", "randomGLM", "parallel", "pense", "robustHD"))
+install.packages(c("mvnfast", "glmnet", "cellWise", "randomGLM", "parallel", "pense", "robustHD", "caret"))
 
 # 3. Install GitHub dependencies for competitors
 # install.packages("devtools")
 devtools::install_github("PengSU517/regcell") # For CR-Lasso
+
+# 4. Install Bioconductor dependencies for Real Data Applications
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install(c("PharmacoGx", "curatedTCGAData", "TCGAutils"))
 ```
 
-## Reproducing the Simulations
+## Reproducing the Analyses
 
-### 1. Fast Local Verification
-To ensure all packages are installed correctly and the data pipelines work on your machine, you can run the localized test script. This runs a miniaturized version of the simulation ($n=30, p=50, N=2$) across all scenarios.
+### 1. Fast Local Verification (Simulations)
+To ensure all packages are installed correctly and the data pipelines work on your machine, you can run the localized test script. This runs a miniaturized version of the simulation ($$n=30, p=50, N=2$$) across all scenarios.
 
 ```bash
 Rscript R/Test_Runner.R
@@ -48,7 +53,22 @@ Rscript R/Test_Runner.R
 This will output test results into a local `test_results/` directory.
 
 ### 2. Full Simulation Execution
-The full simulation study is computationally intensive due to the high-dimensional setting ($p=500$) and the number of replications ($N=50$). To reproduce the full results, researchers should adapt the wrapper functions (`generateOutput.R`) to run in parallel on a high-performance computing environment. 
+The full simulation study is computationally intensive due to the high-dimensional setting ($$p=500$$) and the number of replications ($$N=50$$). To reproduce the full results, researchers should adapt the wrapper functions (`generateOutput.R`) to run in parallel on a high-performance computing environment. 
+
+### 3. Bioinformatics Data Applications
+To reproduce the empirical results on real-world genomic data, run the application scripts. These scripts automatically download the necessary multi-omics data, perform intersections, introduce artificial contamination for robustness testing, and evaluate the models.
+
+*Note: The initial execution of these scripts will take a few minutes as they download large dataset caches (GDSC and TCGA) from Bioconductor repositories. Subsequent runs will load the local cache instantly.*
+
+```bash
+# Run Pharmacogenomics application
+Rscript R/Application_GDSC.R
+
+# Run Proteogenomics application
+Rscript R/Application_TCGA.R
+```
+
+Results will be saved as `.rds` files in the `results/` directory.
 
 ## Citation
 
@@ -66,11 +86,3 @@ If you use this code or the `srlars` package in your research, please cite the c
 ## License
 
 This repository is licensed under GPL (>= 2).
-
-
-
-
-
-
-
-

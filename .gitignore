@@ -1,5 +1,5 @@
 # ------------------------------
-# .gitignore for FSCRE Project
+# .gitignore for FSCRE Paper
 # ------------------------------
 
 # Ignore the temporary test results directory
@@ -7,6 +7,10 @@ test_results/
 
 # Ignore the full simulation results directory
 results/
+
+# Ignore all downloaded application datasets and cached models
+data/*.rds
+data/*.rda
 
 # Ignore SLURM array runner and bash scripts
 R/Generate_Results_Array.R
