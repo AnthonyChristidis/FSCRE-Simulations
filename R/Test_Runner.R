@@ -10,13 +10,14 @@ rm(list = ls())
 
 # 1. Load Required Source Files
 # (Ensure these are in the same directory or adjust paths)
+source("R/computeRCPR.R")
 source("R/generateData.R")
 source("R/generatePred.R")
 source("R/simFunc.R")
 source("R/generateOutput.R")
 
 # 2. Set "Toy" Parameters for Fast Testing
-N_test <- 5             # Only 2 replications to test the inner loop
+N_test <- 2             # Only 2 replications to test the inner loop
 n_test <- 30            # Small sample size
 p_test <- 50            # Small dimension
 m_test <- 200           # Small test set

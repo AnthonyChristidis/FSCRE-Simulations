@@ -15,7 +15,7 @@ library(robustHD)
 library(regcell) 
 
 # Required source files
-source("R/RC_PR.R") 
+source("R/computeRCPR.R") 
 source("SparseShootingS/sparseShootingS.R")
 
 generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
@@ -27,15 +27,6 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
   xtestdata <- sim_data$testing_data$xtest 
   ytestdata <- sim_data$testing_data$ytest
   true.beta <- sim_data$trueBeta
-  
-  # Helper to compute Precision and Recall
-  get_pr_rc <- function(coefs, active_ind) {
-    active_set_hat <- which(coefs != 0)
-    if (length(active_set_hat) == 0) return(list(pr = 0, rc = 0))
-    pr <- length(intersect(active_set_hat, active_ind)) / length(active_set_hat)
-    rc <- length(intersect(active_set_hat, active_ind)) / length(active_ind)
-    return(list(pr = pr, rc = rc))
-  }
   
   # Define methods based on scenario
   if(sim_data$contamination.scenario != "casewise"){
@@ -71,7 +62,7 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
       preds <- predict(fit, xtestdata, s = "lambda.min")
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       coefs <- as.numeric(coef(fit, s = "lambda.min"))[-1]
-      metrics <- get_pr_rc(coefs, sim_data$active_ind)
+      metrics <- computeRCPR(coefs, sim_data$active_ind)
       c(MSPE = mspe, RC = metrics$rc, PR = metrics$pr, CPU = unname(cpu))
     }, error = function(e) c(NA, NA, NA, NA))
     pred_output["ElasticNet",, i] <- en_final
@@ -103,7 +94,7 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
       preds <- predict(fit, xtestdata, s = "lambda.min")
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       coefs <- as.numeric(coef(fit, s = "lambda.min"))[-1]
-      metrics <- get_pr_rc(coefs, sim_data$active_ind)
+      metrics <- computeRCPR(coefs, sim_data$active_ind)
       c(MSPE = mspe, RC = metrics$rc, PR = metrics$pr, CPU = unname(cpu + ddc_cpu))
     }, error = function(e) c(NA, NA, NA, NA))
     pred_output["DDC_EN",, i] <- ddc_en_final
@@ -122,7 +113,7 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
       sel_counts <- colSums(fit$timesSelectedByForwardRegression)
       coefs <- rep(0, p)
       coefs[sel_counts > 0] <- 1
-      metrics <- get_pr_rc(coefs, sim_data$active_ind)
+      metrics <- computeRCPR(coefs, sim_data$active_ind)
       
       c(MSPE = mspe, RC = metrics$rc, PR = metrics$pr, CPU = unname(cpu + ddc_cpu))
     }, error = function(e) c(NA, NA, NA, NA))
@@ -138,7 +129,7 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
       preds <- fit$coef[1] + xtestdata %*% fit$coef[-1]
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       coefs <- fit$coef[-1]
-      metrics <- get_pr_rc(coefs, sim_data$active_ind)
+      metrics <- computeRCPR(coefs, sim_data$active_ind)
       c(MSPE = mspe, RC = metrics$rc, PR = metrics$pr, CPU = unname(cpu))
     }, error = function(e) c(NA, NA, NA, NA))
     pred_output["Sparse_S",, i] <- sps_final
@@ -154,7 +145,7 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
       preds <- fit$intercept_hat + xtestdata %*% fit$betahat
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       coefs <- fit$betahat
-      metrics <- get_pr_rc(coefs, sim_data$active_ind)
+      metrics <- computeRCPR(coefs, sim_data$active_ind)
       
       c(MSPE = mspe, RC = metrics$rc, PR = metrics$pr, CPU = unname(cpu))
     }, error = function(e) c(NA, NA, NA, NA))
@@ -170,7 +161,7 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
       preds <- predict(fit, newx = xtestdata, dynamic = FALSE) 
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       coefs <- coef(fit)[-1]
-      metrics <- get_pr_rc(coefs, sim_data$active_ind)
+      metrics <- computeRCPR(coefs, sim_data$active_ind)
       c(MSPE = mspe, RC = metrics$rc, PR = metrics$pr, CPU = unname(cpu))
     }, error = function(e) c(NA, NA, NA, NA))
     pred_output["RLARS",, i] <- rlars_final
@@ -185,7 +176,7 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
       preds <- predict(fit, newx = xtestdata, dynamic = FALSE) 
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       coefs <- coef(fit)[-1]
-      metrics <- get_pr_rc(coefs, sim_data$active_ind)
+      metrics <- computeRCPR(coefs, sim_data$active_ind)
       c(MSPE = mspe, RC = metrics$rc, PR = metrics$pr, CPU = unname(cpu))
     }, error = function(e) c(NA, NA, NA, NA))
     pred_output["FSCRE",, i] <- fscre_final
@@ -203,7 +194,7 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
         preds <- predict(fit, xtestdata)
         mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
         coefs <- coef(fit)[-1]
-        metrics <- get_pr_rc(coefs, sim_data$active_ind)
+        metrics <- computeRCPR(coefs, sim_data$active_ind)
         c(MSPE = mspe, RC = metrics$rc, PR = metrics$pr, CPU = unname(cpu))
       }, error = function(e) c(NA, NA, NA, NA))
       pred_output["PENSE",, i] <- pense_final
@@ -218,7 +209,7 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
         preds <- predict(fit, xtestdata)
         mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
         coefs <- coef(fit)[-1]
-        metrics <- get_pr_rc(coefs, sim_data$active_ind)
+        metrics <- computeRCPR(coefs, sim_data$active_ind)
         c(MSPE = mspe, RC = metrics$rc, PR = metrics$pr, CPU = unname(cpu))
       }, error = function(e) c(NA, NA, NA, NA)) 
       pred_output["SparseLTS",, i] <- slts_final
