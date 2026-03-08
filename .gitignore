@@ -1,0 +1,41 @@
+# -----------------------------
+# .gitignore for FSCRE Paper
+# -----------------------------
+
+# Ignore the temporary test results directory
+test_results/
+
+# Ignore the full simulation results directory
+results/
+
+# Ignore SLURM array runner script 
+R/Generate_Results_Array.R
+
+# Ignore SLURM output/error log directories
+sim_study_out/
+sim_study_err/
+
+# Ignore generic SLURM logs 
+*.out
+*.err
+slurm-*.out
+
+# Ignore R history, workspace, and user-specific files
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+.Rapp.history
+
+# Ignore OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Ignore any local temporary data or plot folders
+# temp_data/
+# plots/
