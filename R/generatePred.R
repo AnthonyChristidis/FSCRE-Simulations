@@ -57,7 +57,7 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
     # ------------------------------------
     en_final <- tryCatch({
       cpu <- system.time(
-        fit <- glmnet::cv.glmnet(x = xtrain, y = ytrain, alpha = 0.5)
+        fit <- glmnet::cv.glmnet(x = xtrain, y = ytrain, alpha = 3/4)
       )["elapsed"]
       preds <- predict(fit, xtestdata, s = "lambda.min")
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
@@ -89,7 +89,7 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
     # -------------------------------
     ddc_en_final <- tryCatch({
       cpu <- system.time(
-        fit <- glmnet::cv.glmnet(x = x_imp, y = y_imp, alpha = 0.5)
+        fit <- glmnet::cv.glmnet(x = x_imp, y = y_imp, alpha = 3/4)
       )["elapsed"]
       preds <- predict(fit, xtestdata, s = "lambda.min")
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
