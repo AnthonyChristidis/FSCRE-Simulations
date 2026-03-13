@@ -1,6 +1,6 @@
-# --------------------------------------------------------------------------
-# Application 2: Proteogenomics (TCGA BRCA) - Protein Abundance Prediction
-# --------------------------------------------------------------------------
+# ------------------------------------------------------------------------
+# Application: Proteogenomics (TCGA BRCA) - Protein Abundance Prediction
+# ------------------------------------------------------------------------
 
 # Clear workspace
 rm(list = ls())
@@ -18,7 +18,7 @@ library(regcell)
 # Load required source files
 source("SparseShootingS/sparseShootingS.R")
 
-# --------------------------------------------------------------------------
+# ------------------------------------------------------------------------
 
 # Set seed
 set.seed(0)
