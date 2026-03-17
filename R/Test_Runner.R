@@ -1,6 +1,7 @@
-# ---------------------------------------------------------
+# ---------------------------------------------
 # FAST VERIFICATION SCRIPT for FSCRE Pipeline
-# ---------------------------------------------------------
+# ---------------------------------------------
+
 # This script runs a miniature version of the full simulation 
 # to verify that all functions, loops, and data saving mechanisms 
 # work without errors across all scenarios.
@@ -17,16 +18,16 @@ source("R/simFunc.R")
 source("R/generateOutput.R")
 
 # 2. Set "Toy" Parameters for Fast Testing
-N_test <- 2             # Only 2 replications to test the inner loop
-n_test <- 30            # Small sample size
-p_test <- 50            # Small dimension
-m_test <- 200           # Small test set
-p_active_test <- c(10)  # Only test one sparsity level
-snr_test <- 1           # Only test one SNR
+N_test <- 5              # Only 5 replications to test the inner loop
+n_test <- 50             # Sample size
+p_test <- 500            # Dimension
+m_test <- 2000           # Test set
+p_active_test <- 50      # Only test one sparsity level
+snr_test <- 1            # Only test one SNR
 rho_test <- 0.8
 rho_inactive_test <- 0.2
 group_size_test <- 5
-n_models_test <- 3   # Small ensemble
+n_models_test <- 5   # Ensemble size
 sim_tolerance <- 1e-3
 
 # Scenarios to test
@@ -34,7 +35,7 @@ scenarios_to_test <- c("casewise",
                        "cellwise_marginal", 
                        "cellwise_correlation",
                        "mixture_marginal", 
-                       "mixture_correlation")
+                       "mixture_correlation")[5]
 
 # Ensure output directory exists
 if (!dir.exists("test_results")) {

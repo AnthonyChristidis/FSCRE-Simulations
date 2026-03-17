@@ -13,34 +13,20 @@ The core methodology (the FSCRE algorithm) is implemented in the `srlars` R pack
     *   `generateData.R`: Generates high-dimensional data with block-collinearity and applies 5 distinct contamination scenarios (Casewise, Cellwise Marginal, Cellwise Correlation, and Mixtures).
     *   `generatePred.R`: Fits the FSCRE algorithm alongside all baseline and state-of-the-art competitor methods, returning performance metrics.
     *   `simFunc.R` & `generateOutput.R`: Wrapper functions to iterate over sparsity levels and contamination proportions.
+    *   `Generate_Results.R`: The main execution script for the full simulation study. It iterates over all contamination scenarios, SNRs, and parameter grids to generate the complete set of results.
     *   `Test_Runner.R`: A lightweight script to verify the simulation pipeline locally.
     *   `Generate_CPU_Results.R`: Script to conduct the computational scalability study, measuring execution time across varying dimensions ($p$) and sample sizes ($n$).
     *   `Application_TCGA.R`: Script to reproduce the Proteogenomics (TCGA BRCA) real data application (predicting protein abundance from mRNA).
 *   **`SparseShootingS/`**: Contains the author-provided implementation of the Sparse Shooting S-estimator.
-*   **`CRLasso/`**: Contains wrappers/scripts for the CR-Lasso implementation.
 
 ## Prerequisites and Installation
 
-To run these scripts, you must install the `srlars` package, competitor methods, and the necessary Bioconductor packages for the real data application. 
+To ensure a smooth setup, we provide a single script that automatically checks for and installs all required dependencies from CRAN, Bioconductor, and GitHub (including the `srlars` package and competitor implementations).
 
-Run the following in R to set up your environment:
+Run the following command in your R console from the root directory of this repository:
 
 ```r
-# 1. Install the proposed method from CRAN (or GitHub)
-install.packages("srlars")
-# devtools::install_github("AnthonyChristidis/srlars") # Development version
-
-# 2. Install CRAN dependencies and baselines
-install.packages(c("mvnfast", "glmnet", "cellWise", "randomGLM", "parallel", "pense", "robustHD", "caret"))
-
-# 3. Install GitHub dependencies for competitors
-# install.packages("devtools")
-devtools::install_github("PengSU517/regcell") # For CR-Lasso
-
-# 4. Install Bioconductor dependencies for Real Data Application
-if (!require("BiocManager", quietly = TRUE))
-    install.packages("BiocManager")
-BiocManager::install(c("curatedTCGAData", "TCGAutils", "MultiAssayExperiment"))
+source("Install_Dependencies.R")
 ```
 
 ## Reproducing the Analyses
