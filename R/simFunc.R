@@ -1,4 +1,4 @@
-#' @description simfunc() calls generateData() and generatePred().
+#' @description simFunc() calls generateData() and generatePred().
 #' 
 #' @param N Number of training sets (replications).
 #' @param n Sample size for training set.
@@ -18,7 +18,7 @@
 source("R/generateData.R")
 source("R/generatePred.R")
 
-simfunc <- function(N, 
+simFunc <- function(N, 
                     n, 
                     m, 
                     p, 

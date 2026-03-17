@@ -41,7 +41,11 @@ Rscript R/Test_Runner.R
 This will output test results into a local `test_results/` directory.
 
 ### 2. Full Simulation Execution
-The full simulation study is computationally intensive due to the high-dimensional setting ($p=500$) and the number of replications ($N=50$). To reproduce the full results, researchers should adapt the wrapper functions (`generateOutput.R`) to run in parallel on a high-performance computing environment. 
+The full simulation study is computationally intensive due to the high-dimensional setting ($p=500$) and the number of replications ($N=50$). To reproduce the full results, run the main execution script. Given the computational load, execution on a multi-core machine or high-performance computing environment is strongly recommended.
+
+```bash
+Rscript R/Generate_Results.R
+```
 
 ### 3. Computational Scalability Study
 To reproduce the CPU timing results demonstrating the scalability of FSCRE against increasing dimensions and sample sizes, run the timing script. This isolates the most challenging contamination scenario to stress-test the algorithms.

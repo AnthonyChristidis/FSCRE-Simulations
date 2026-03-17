@@ -1,4 +1,4 @@
-#' @description generateOutput() calls simfunc() for a single specific configuration.
+#' @description generateOutput() calls simFunc() for a single specific configuration.
 #' 
 #' @param N Number of training sets.
 #' @param n Sample size for training set.
@@ -46,8 +46,8 @@ generateOutput <- function (N,
   cat("SNR:", snr, "\n")
   cat("============================================\n")
   
-  # Compute simfunc() for this single specific setting
-  output <- simfunc(N = N, n = n, m = m, p = p, 
+  # Compute simFunc() for this single specific setting
+  output <- simFunc(N = N, n = n, m = m, p = p, 
                     rho = rho, rho.inactive = rho.inactive, 
                     p.active = p.active, 
                     group.size = group.size, snr = snr, 
