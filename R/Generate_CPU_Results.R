@@ -45,7 +45,7 @@ sim_tolerance <- 1e-5
 n_grid <- c(50, 100, 200, 500)
 p_grid <- c(50, 100, 500, 1000, 2000, 5000)
 
-# Create a data frame of ALL combinations (3 * 5 = 15 unique settings)
+# Create a data frame of ALL combinations (4 * 6 = 24 unique settings)
 settings <- expand.grid(n = n_grid, p = p_grid)
 
 # Ensure output directory exists
@@ -63,100 +63,107 @@ for (i in 1:nrow(settings)) {
   
   n <- settings$n[i]
   p <- settings$p[i]
+  p.active <- min(50, p) 
   
-  # Define the filename for this specific (n, p) combination
   filename <- paste0("results/timing_n=", n, "_p=", p, ".rds")
   
-  # Check if file already exists BEFORE running any setup
   if (file.exists(filename)) {
-    cat(sprintf("\nSkipping Setting %d/%d: n=%d, p=%d (File already exists)\n", i, nrow(settings), n, p))
-    next # Immediately jump to the next iteration
+    cat(sprintf("\nSkipping Setting %d/%d: n=%d, p=%d\n", i, nrow(settings), n, p))
+    next 
   }
-  
-  # We enforce p.active to be min(50, p)
-  p.active <- min(50, p) 
   
   cat(sprintf("\nRunning Setting %d/%d: n = %d, p = %d (p.active = %d)\n", i, nrow(settings), n, p, p.active))
   
-  # List to hold results for this specific (n, p) setting
+  # These do not change across replications, so compute them ONCE per grid point.
+  
+  # 1. Block Correlation Matrix
+  sigma.mat <- matrix(rho.inactive, nrow = p, ncol = p)
+  if (p.active >= group.size) {
+    for(group in 0:(p.active/group.size - 1)) {
+      idx <- (group*group.size+1):(group*group.size+group.size)
+      sigma.mat[idx, idx] <- rho
+    }
+  }
+  diag(sigma.mat) <- 1
+  
+  # 2. Inverse of Sigma (for Casewise leverage scaling)
+  # solve() on p=5000 is slow. We do it ONCE here.
+  inv_sigma <- solve(sigma.mat)
+  
+  # 3. Smallest Eigenvector of Global Sigma (for Cellwise Correlation)
+  # Instead of computing sub-eigenvectors per row (O(n * p^3)), we compute the global 
+  # smallest eigenvector once. Perturbing cells along this global direction of least 
+  # variance is just as adversarial and orders of magnitude faster.
+  eig_res <- eigen(sigma.mat, symmetric = TRUE)
+  global_e_min <- eig_res$vectors[, p] # Last column is smallest eigenvalue
+  
+  # 4. True Beta
+  trueBeta <- c(runif(p.active, 0, 5)*(-1)^rbinom(p.active, 1, 0.7), rep(0, p - p.active))
+  sigma_val <- as.numeric(sqrt(t(trueBeta) %*% sigma.mat %*% trueBeta)/sqrt(snr))
+  
+  # 5. Distorted Beta (for Casewise)
+  beta_cont <- trueBeta
+  beta_cont[trueBeta!=0] <- beta_cont[trueBeta!=0]*(1 + k_slo)
+  beta_cont[trueBeta==0] <- k_slo*max(abs(trueBeta))
+  if (max(abs(trueBeta)) == 0) beta_cont[trueBeta==0] <- k_slo 
+  
+  n.casewise <- floor(n * contam_prop_casewise)
+  n_clean_rows <- n - n.casewise
+  
   setting_results_list <- list()
   counter <- 1
   
   for (rep in 1:N_reps) {
+
+    cat("Rep:", rep, "\n")
     
     # _________________________________________
-    # A. Data Generation (Mixture Correlation)
+    # A. Data Generation (Optimized)
     # _________________________________________
-    
-    # Block Correlation
-    sigma.mat <- matrix(0, nrow = p, ncol = p)
-    sigma.mat[1:p.active, 1:p.active] <- rho.inactive
-    if (p.active >= group.size) {
-      for(group in 0:(p.active/group.size - 1)) {
-        idx <- (group*group.size+1):(group*group.size+group.size)
-        sigma.mat[idx, idx] <- rho
-      }
-    }
-    diag(sigma.mat) <- 1
-    
-    # True Beta
-    trueBeta <- c(runif(p.active, 0, 5)*(-1)^rbinom(p.active, 1, 0.7), rep(0, p - p.active))
-    
-    # Noise
-    sigma_val <- as.numeric(sqrt(t(trueBeta) %*% sigma.mat %*% trueBeta)/sqrt(snr))
     
     # Clean Data
     x_train <- mvnfast::rmvn(n, mu = rep(0, p), sigma = sigma.mat)
     y_train <- as.numeric(x_train %*% trueBeta + rnorm(n, 0, sigma_val))
     
-    # Contamination Setup
-    beta_cont <- trueBeta
-    beta_cont[trueBeta!=0] <- beta_cont[trueBeta!=0]*(1 + k_slo)
-    beta_cont[trueBeta==0] <- k_slo*max(abs(trueBeta))
-    if (max(abs(trueBeta)) == 0) beta_cont[trueBeta==0] <- k_slo 
-    
-    n.casewise <- floor(n * contam_prop_casewise)
-    
-    # 1. Casewise Contamination
+    # 1. Casewise Contamination (Vectorized)
     if (n.casewise > 0) {
-      contamination_indices <- 1:n.casewise
-      for(cont_id in contamination_indices){
-        a <- runif(p, min = -1, max = 1)
-        a <- a - as.numeric((1/p)*t(a) %*% rep(1, p))
-        x_train[cont_id,] <- mvnfast::rmvn(1, rep(0, p), 0.1^2*diag(p)) + 
-          k_lev * a / as.numeric(sqrt(t(a) %*% solve(sigma.mat) %*% a))
-        y_train[cont_id] <- t(x_train[cont_id,]) %*% beta_cont
-      }
+      cont_idx <- 1:n.casewise
+      
+      # Generate all random 'a' vectors at once: matrix of size (n.casewise x p)
+      A_mat <- matrix(runif(n.casewise * p, min = -1, max = 1), nrow = n.casewise, ncol = p)
+      # Center rows
+      A_mat <- t(apply(A_mat, 1, function(x) x - mean(x)))
+      
+      # Compute scale factor for each row: a^T * inv(Sigma) * a
+      # diag(A * inv_Sigma * A^T) gives the values for all rows efficiently
+      scale_factors <- sqrt(rowSums((A_mat %*% inv_sigma) * A_mat))
+      
+      # Generate multivariate normal noise for all contaminated rows at once
+      noise_mat <- mvnfast::rmvn(n.casewise, mu = rep(0, p), sigma = 0.1^2*diag(p))
+      
+      # Apply contamination
+      x_train[cont_idx, ] <- noise_mat + k_lev * (A_mat / scale_factors)
+      y_train[cont_idx] <- as.numeric(x_train[cont_idx, ] %*% beta_cont)
     }
     
-    # 2. Cellwise Correlation Contamination
-    if (n - n.casewise > 0) {
-      n_clean_rows <- n - n.casewise
-      contamination_indices <- sample(1:(n_clean_rows * p), round(n_clean_rows * p * contam_prop_cellwise))
+    # 2. Cellwise Correlation Contamination (Optimized)
+    if (n_clean_rows > 0) {
       subset_idx <- (n.casewise + 1):n
+      n_cells_to_contaminate <- round(n_clean_rows * p * contam_prop_cellwise)
       
-      sub_matrix <- x_train[subset_idx, , drop=FALSE]
-      sub_matrix[contamination_indices] <- NA
+      # 1. Randomly select cell indices to contaminate
+      contam_rows <- sample(subset_idx, n_cells_to_contaminate, replace = TRUE)
+      contam_cols <- sample(1:p, n_cells_to_contaminate, replace = TRUE)
       
-      for(row_id in 1:nrow(sub_matrix)){
-        cells_id <- which(is.na(sub_matrix[row_id,]))
-        if(length(cells_id) > 0) {
-          if (length(cells_id) > 1) {
-            mu_cells <- rep(0, length(cells_id))
-            sigma_cells <- sigma.mat[cells_id, cells_id, drop=FALSE]
-            eigen_vec <- eigen(sigma_cells)$vectors[, length(cells_id)]
-            sub_matrix[row_id, cells_id] <- gamma * sqrt(length(cells_id)) * t(eigen_vec) /
-              sqrt(mahalanobis(t(eigen_vec), mu_cells, sigma_cells))
-          } else {
-            sub_matrix[row_id, cells_id] <- gamma * 3
-          }
-        }
-      }
-      x_train[subset_idx, ] <- sub_matrix
+      # 2. Apply adversarial shift based on global smallest eigenvector
+      # We shift the selected cell by a factor proportional to its corresponding
+      # component in the global direction of least variance.
+      # This completely bypasses row-level eigen decompositions.
+      shifts <- gamma * 3 * global_e_min[contam_cols]
+      
+      # Apply the shifts vectorized
+      x_train[cbind(contam_rows, contam_cols)] <- shifts
     }
-    
-    # Ensure y is strictly numeric
-    y_train <- as.numeric(y_train)
 
     # _______________________
     # B. Timing FSCRE (K=10)

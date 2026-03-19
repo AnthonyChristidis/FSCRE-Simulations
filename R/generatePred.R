@@ -189,7 +189,10 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
       # PENSE
       pense_final <- tryCatch({
         cpu <- system.time(
-          fit <- pense::adapense_cv(x = xtrain, y = ytrain, alpha = 0.75, cv_k = 5, cl = cluster)
+          fit <- pense::adapense_cv(x = xtrain, y = ytrain, alpha = 3/4, 
+            cv_k = 5, cv_repl = 1, eps = 1e-3, explore_tol = 1e-3, 
+            enpy_opts = pense::enpy_options(retain_max = 50),
+            cl = cluster)
         )["elapsed"]
         preds <- predict(fit, xtestdata)
         mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2

@@ -1,6 +1,10 @@
 # Source: https://github.com/ineswilms/sparse-shooting-S
 # Authors: Lea Bottmer, Christophe Croux, Ines 
 
+# Set environment variables to ensure LAPACK/BLAS are linked during compilation
+# This fixes the "undefined symbol: dpotrf_" error on Linux clusters.
+Sys.setenv("PKG_LIBS" = paste(Sys.getenv("PKG_LIBS"), "$(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)"))
+
 # Source CPP code
 Rcpp::sourceCpp("SparseShootingS/sparseShootingS.cpp")
 

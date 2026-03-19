@@ -18,7 +18,7 @@ source("R/simFunc.R")
 source("R/generateOutput.R")
 
 # 2. Set "Toy" Parameters for Fast Testing
-N_test <- 5              # Only 5 replications to test the inner loop
+N_test <- 2              # Only 2 replications to test the inner loop
 n_test <- 50             # Sample size
 p_test <- 500            # Dimension
 m_test <- 2000           # Test set

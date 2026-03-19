@@ -32,7 +32,8 @@ cran_pkgs <- list(
   perry = "0.3.1",
   doParallel = "1.0.17",
   foreach = "1.5.2",
-  iterators = "1.0.14"
+  iterators = "1.0.14",
+  R.utils = "2.13.0"
 )
 
 cat("--- Checking CRAN Packages ---\n")

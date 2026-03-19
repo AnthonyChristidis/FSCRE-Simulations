@@ -14,9 +14,10 @@ library(randomGLM)
 library(caret)
 library(srlars) 
 library(regcell)
+library(R.utils)
 
 # Load required source files
-source("SparseShootingS/sparseShootingS.R")
+source("R/SparseShootingS/sparseShootingS.R")
 
 # ------------------------------------------------------------------------
 
@@ -87,74 +88,142 @@ if(!file.exists(data_file)) {
 # Define Model Evaluation Helper 
 # _______________________________
 
+# Helper modified to return BOTH MSPE and selected variables
 runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
   
   p <- ncol(x_tr)
   mspe_results <- c()
+  selected_vars <- list()
+  time_limit <- 300 # 5 minutes in seconds
   
   # 1. Elastic Net (EN)
-  fit_en <- tryCatch({
-    fit <- cv.glmnet(x = x_tr, y = y_tr, alpha = 3/4)
-    mean((predict(fit, x_te, s = "lambda.min") - y_te)^2)
-  }, error = function(e) NA)
-  mspe_results["ElasticNet"] <- fit_en
+  tryCatch({
+    withTimeout({
+      fit <- cv.glmnet(x = x_tr, y = y_tr, alpha = 3/4)
+      mspe_results["ElasticNet"] <- mean((predict(fit, x_te, s = "lambda.min") - y_te)^2)
+      
+      # Extract non-zero coefficients (excluding intercept)
+      coefs <- as.numeric(coef(fit, s = "lambda.min"))[-1]
+      selected_vars[["ElasticNet"]] <- colnames(x_tr)[which(coefs != 0)]
+    }, timeout = time_limit, onTimeout = "error")
+  }, error = function(e) {
+    if (grepl("Timeout", e$message)) cat(" [EN Timed out] ")
+    mspe_results["ElasticNet"] <<- NA
+    selected_vars[["ElasticNet"]] <<- character(0)
+  })
   
   # Shared DDC Imputation for Baselines
   x_imp <- x_tr
   y_imp <- y_tr
   tryCatch({
-    ddc_out <- cellWise::DDC(cbind(x_tr, y_tr), DDCpars = list(fastDDC = TRUE, silent = TRUE))
-    x_imp <- ddc_out$Ximp[, 1:p]
-    y_imp <- ddc_out$Ximp[, p+1]
-  }, error = function(e) NULL)
+    withTimeout({
+      ddc_out <- cellWise::DDC(cbind(x_tr, y_tr), DDCpars = list(fastDDC = TRUE, silent = TRUE))
+      x_imp <<- ddc_out$Ximp[, 1:p]   
+      y_imp <<- ddc_out$Ximp[, p+1]
+    }, timeout = time_limit, onTimeout = "error")
+  }, error = function(e) {
+    if (grepl("Timeout", e$message)) cat(" [DDC Timed out] ")
+  })
   
   # 2. DDC + EN
-  fit_ddc_en <- tryCatch({
-    fit <- cv.glmnet(x = x_imp, y = y_imp, alpha = 3/4)
-    mean((predict(fit, x_te, s = "lambda.min") - y_te)^2)
-  }, error = function(e) NA)
-  mspe_results["DDC_EN"] <- fit_ddc_en
+  tryCatch({
+    withTimeout({
+      fit <- cv.glmnet(x = x_imp, y = y_imp, alpha = 3/4)
+      mspe_results["DDC_EN"] <- mean((predict(fit, x_te, s = "lambda.min") - y_te)^2)
+      
+      coefs <- as.numeric(coef(fit, s = "lambda.min"))[-1]
+      selected_vars[["DDC_EN"]] <- colnames(x_imp)[which(coefs != 0)]
+    }, timeout = time_limit, onTimeout = "error")
+  }, error = function(e) {
+    if (grepl("Timeout", e$message)) cat(" [DDC_EN Timed out] ")
+    mspe_results["DDC_EN"] <<- NA
+    selected_vars[["DDC_EN"]] <<- character(0)
+  })
   
   # 3. DDC + Random GLM
-  fit_ddc_rglm <- tryCatch({
-    fit <- randomGLM(x_imp, y_imp, classify = FALSE, nBags = 100, keepModels = TRUE, nThreads = 1, verbose = 0)
-    mean((predict(fit, newdata = x_te) - y_te)^2)
-  }, error = function(e) NA)
-  mspe_results["DDC_RGLM"] <- fit_ddc_rglm
+  tryCatch({
+    withTimeout({
+      fit <- randomGLM(x_imp, y_imp, classify = FALSE, nBags = 100, keepModels = TRUE, nThreads = 1, verbose = 0)
+      mspe_results["DDC_RGLM"] <- mean((predict(fit, newdata = x_te) - y_te)^2)
+      
+      # Extract variables selected in > 0 bags
+      sel_counts <- colSums(fit$timesSelectedByForwardRegression)
+      selected_vars[["DDC_RGLM"]] <- colnames(x_imp)[which(sel_counts > 0)]
+    }, timeout = time_limit, onTimeout = "error")
+  }, error = function(e) {
+    if (grepl("Timeout", e$message)) cat(" [DDC_RGLM Timed out] ")
+    mspe_results["DDC_RGLM"] <<- NA
+    selected_vars[["DDC_RGLM"]] <<- character(0)
+  })
   
-  # # 4. Sparse Shooting S
-  # fit_sps <- tryCatch({
-  #   fit <- sparseshooting(x = x_tr, y = y_tr, wvalue = 3, nlambda = 50)
-  #   preds <- fit$coef[1] + x_te %*% fit$coef[-1]
-  #   mean((preds - y_te)^2)
-  # }, error = function(e) NA)
-  # mspe_results["Sparse_S"] <- fit_sps
+  # 4. Sparse Shooting S
+  tryCatch({
+    withTimeout({
+      fit <- sparseshooting(x = x_tr, y = y_tr, wvalue = 3, nlambda = 50)
+      preds <- fit$coef[1] + x_te %*% fit$coef[-1]
+      mspe_results["Sparse_S"] <- mean((preds - y_te)^2)
+      
+      coefs <- fit$coef[-1]
+      selected_vars[["Sparse_S"]] <- colnames(x_tr)[which(coefs != 0)]
+    }, timeout = time_limit, onTimeout = "error")
+  }, error = function(e) {
+    if (grepl("Timeout", e$message)) cat(" [Sparse_S Timed out] ")
+    mspe_results["Sparse_S"] <<- NA
+    selected_vars[["Sparse_S"]] <<- character(0)
+  })
   
-  # # 5. CR-Lasso
-  # fit_crlasso <- tryCatch({
-  #   fit <- regcell::sregcell_std(y_tr, x_tr)
-  #   preds <- fit$intercept_hat + x_te %*% fit$betahat
-  #   mean((preds - y_te)^2)
-  # }, error = function(e) NA)
-  # mspe_results["CR_Lasso"] <- fit_crlasso
+  # 5. CR-Lasso
+  tryCatch({
+    withTimeout({
+      fit <- regcell::sregcell_std(y_tr, x_tr)
+      preds <- fit$intercept_hat + x_te %*% fit$betahat
+      mspe_results["CR_Lasso"] <- mean((preds - y_te)^2)
+      
+      coefs <- fit$betahat
+      selected_vars[["CR_Lasso"]] <- colnames(x_tr)[which(coefs != 0)]
+    }, timeout = time_limit, onTimeout = "error")
+  }, error = function(e) {
+    if (grepl("Timeout", e$message)) cat(" [CR_Lasso Timed out] ")
+    mspe_results["CR_Lasso"] <<- NA
+    selected_vars[["CR_Lasso"]] <<- character(0)
+  })
   
   # 6. RLARS (Proposed, K=1)
-  fit_rlars <- tryCatch({
-    fit <- srlars(x_tr, y_tr, n_models = 1, tolerance = 0.01, robust = TRUE, compute_coef = TRUE)
-    mean((predict(fit, newx = x_te, dynamic = FALSE) - y_te)^2)
-  }, error = function(e) NA)
-  mspe_results["RLARS"] <- fit_rlars
+  tryCatch({
+    withTimeout({
+      fit <- srlars(x_tr, y_tr, n_models = 1, tolerance = 0.01, robust = TRUE, compute_coef = TRUE)
+      mspe_results["RLARS"] <- mean((predict(fit, newx = x_te, dynamic = FALSE) - y_te)^2)
+      
+      # For K=1, active.sets is a list of length 1
+      selected_vars[["RLARS"]] <- colnames(x_tr)[fit$active.sets[[1]]]
+    }, timeout = time_limit, onTimeout = "error")
+  }, error = function(e) {
+    if (grepl("Timeout", e$message)) cat(" [RLARS Timed out] ")
+    mspe_results["RLARS"] <<- NA
+    selected_vars[["RLARS"]] <<- character(0)
+  })
   
   # 7. FSCRE (Proposed, K=10)
-  fit_fscre <- tryCatch({
-    fit <- srlars(x_tr, y_tr, n_models = 10, tolerance = 0.01, robust = TRUE, compute_coef = TRUE)
-    mean((predict(fit, newx = x_te, dynamic = FALSE) - y_te)^2)
-  }, error = function(e) NA)
-  mspe_results["FSCRE"] <- fit_fscre
+  tryCatch({
+    withTimeout({
+      fit <- srlars(x_tr, y_tr, n_models = 10, tolerance = 0.01, robust = TRUE, compute_coef = TRUE)
+      mspe_results["FSCRE"] <- mean((predict(fit, newx = x_te, dynamic = FALSE) - y_te)^2)
+      
+      # For K=10, active.sets is a list of K vectors. We want all unique genes selected across the ensemble.
+      all_selected_idx <- unique(unlist(fit$active.sets))
+      selected_vars[["FSCRE"]] <- colnames(x_tr)[all_selected_idx]
+    }, timeout = time_limit, onTimeout = "error")
+  }, error = function(e) {
+    if (grepl("Timeout", e$message)) cat(" [FSCRE Timed out] ")
+    mspe_results["FSCRE"] <<- NA
+    selected_vars[["FSCRE"]] <<- character(0)
+  })
   
-  # Prepend prefix to names
+  # Prepend prefix to names for MSPE
   names(mspe_results) <- paste0(prefix, "_", names(mspe_results))
-  return(mspe_results)
+  
+  # We return a list containing both the MSPE vector and the list of selected variables
+  return(list(mspe = mspe_results, vars = selected_vars))
 }
 
 
@@ -162,7 +231,7 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
 # OUTER LOOP OVER TARGET PROTEINS
 # ________________________________
 
-proteins_to_run <- c("ER-alpha", "EGFR")
+proteins_to_run <- c("EGFR", "ER-alpha")
 N_splits <- 50
 
 for (target_protein in proteins_to_run) {
@@ -210,13 +279,18 @@ for (target_protein in proteins_to_run) {
   # Simulation Loop
   # ________________
   
-  results_list <- list()
+  mspe_list <- list()
+  
+  # We will store the selected variables across all splits in a nested list
+  # Structure: vars_list[[split_idx]][["Orig" or "Contam"]][["MethodName"]]
+  vars_list <- list() 
   
   for (i in 1:N_splits) {
     cat(sprintf("  Split %d / %d...\n", i, N_splits))
     
-    # Train/Test Split (Note: p=0.1 means 10% in test, 90% in train. Adjust if you meant 70/30)
-    train_idx <- createDataPartition(y, p = 0.7, list = FALSE) # Changed to 0.7 for standard 70/30 split
+    # Train/Test Split
+    # Note: Using a fixed n_train = 50 to maintain the extreme p >> n setting as discussed
+    train_idx <- sample(1:nrow(y), 50)
     
     x_train <- X[train_idx, ]
     y_train <- y[train_idx]
@@ -224,7 +298,7 @@ for (target_protein in proteins_to_run) {
     y_test <- y[-train_idx]
     
     # A. Run on ORIGINAL Data
-    mspe_orig <- runModels(x_train, y_train, x_test, y_test, prefix = "Orig")
+    res_orig <- runModels(x_train, y_train, x_test, y_test, prefix = "Orig")
     
     # B. Introduce TARGETED Artificial Contamination 
     x_train_cont <- x_train
@@ -233,9 +307,9 @@ for (target_protein in proteins_to_run) {
     quick_en <- cv.glmnet(x_train, y_train, alpha = 3/4)
     clean_coefs <- as.numeric(coef(quick_en, s = "lambda.min"))[-1]
     
-    # Get the indices of the top 10 most important genes
-    n_top_genes <- min(10, sum(clean_coefs != 0))
-    if (n_top_genes == 0) n_top_genes <- 10 
+    # Get the indices of the top 30 most important genes
+    n_top_genes <- min(30, sum(clean_coefs != 0))
+    if (n_top_genes == 0) n_top_genes <- 30 
     top_var_indices <- order(abs(clean_coefs), decreasing = TRUE)[1:n_top_genes]
     
     # 2. Poison ONLY these important variables
@@ -249,86 +323,34 @@ for (target_protein in proteins_to_run) {
     }
     
     # Run on CONTAMINATED Data
-    mspe_cont <- runModels(x_train_cont, y_train, x_test, y_test, prefix = "Contam")
+    res_cont <- runModels(x_train_cont, y_train, x_test, y_test, prefix = "Contam")
     
-    # Store results
-    results_list[[i]] <- c(mspe_orig, mspe_cont)
+    # Store MSPE results
+    mspe_list[[i]] <- c(res_orig$mspe, res_cont$mspe)
+    
+    # Store Variable Selection results
+    vars_list[[i]] <- list(Orig = res_orig$vars, Contam = res_cont$vars)
   }
   
   # ___________________________
   # Summarize and Save Results
   # ___________________________
   
-  final_results_df <- do.call(rbind, results_list)
+  final_mspe_df <- do.call(rbind, mspe_list)
   
   cat(sprintf("\n--- FINAL RESULTS for %s (Average MSPE) ---\n", target_protein))
-  print(round(colMeans(final_results_df, na.rm = TRUE), 4))
+  print(round(colMeans(final_mspe_df, na.rm = TRUE), 4))
   
-  # Clean filename (replace hyphens or spaces to avoid saving issues)
+  # Clean filename
   safe_protein_name <- gsub("-", "_", target_protein)
-  filename <- sprintf("results/Application2_TCGA_%s_Results.rds", safe_protein_name)
   
-  saveRDS(final_results_df, filename)
-  cat(sprintf("Results saved to %s\n", filename))
-
-  # ___________________________________________________________
-  # Final Model Fit on Full Data (for Gene Selection Analysis)
-  # ___________________________________________________________
-
-  cat(sprintf("\n--- Fitting Final Models on Full Data for %s ---\n", target_protein))
-
-  # A. Fit on Full Original Data
-  fit_orig_fscre <- tryCatch({
-      srlars(X, y, n_models = 10, tolerance = 0.01, robust = TRUE)
-  }, error = function(e) list(active.sets = list()))
+  # Save MSPE
+  mspe_filename <- sprintf("results/Application_TCGA_%s_MSPE.rds", safe_protein_name)
+  saveRDS(final_mspe_df, mspe_filename)
   
-  orig_selected_genes <- colnames(X)[unique(unlist(fit_orig_fscre$active.sets))]
-
-  # B. Create TARGETED Contaminated Version of the Full Data
-  X_cont_full <- X
+  # Save Variables
+  vars_filename <- sprintf("results/Application_TCGA_%s_Genes.rds", safe_protein_name)
+  saveRDS(vars_list, vars_filename)
   
-  # Identify important variables on full clean data
-  quick_en_full <- cv.glmnet(X, y, alpha = 3/4)
-  clean_coefs_full <- as.numeric(coef(quick_en_full, s = "lambda.min"))[-1]
-  n_top_genes_full <- min(10, sum(clean_coefs_full != 0))
-  if (n_top_genes_full == 0) n_top_genes_full <- 10
-  top_var_indices_full <- order(abs(clean_coefs_full), decreasing = TRUE)[1:n_top_genes_full]
-  
-  # Poison those variables
-  n_to_corrupt_full <- round(0.15 * nrow(X))
-  for (j in top_var_indices_full) {
-      corrupt_rows <- sample(1:nrow(X), n_to_corrupt_full)
-      X_cont_full[corrupt_rows, j] <- sample(c(10, -10), n_to_corrupt_full, replace = TRUE)
-  }
-
-  # C. Fit Models on Contaminated Data
-  fit_cont_fscre <- tryCatch({
-      srlars(X_cont_full, y, n_models = 10, tolerance = 0.01, robust = TRUE)
-  }, error = function(e) list(active.sets = list()))
-  
-  cont_selected_genes_fscre <- colnames(X)[unique(unlist(fit_cont_fscre$active.sets))]
-
-  fit_cont_en <- tryCatch({
-      cv.glmnet(x = X_cont_full, y = y, alpha = 3/4)
-  }, error = function(e) NULL)
-  
-  if (!is.null(fit_cont_en)) {
-      cont_coefs_en <- as.numeric(coef(fit_cont_en, s = "lambda.min"))[-1]
-      cont_selected_genes_en <- colnames(X)[which(cont_coefs_en != 0)]
-  } else {
-      cont_selected_genes_en <- character(0)
-  }
-
-  # D. Save the Lists for Literature Checking
-  genes_list <- list(
-      FSCRE_Orig = orig_selected_genes, 
-      FSCRE_Cont = cont_selected_genes_fscre, 
-      EN_Cont = cont_selected_genes_en
-  )
-  
-  genes_filename <- sprintf("results/Application2_TCGA_%s_Genes.rds", safe_protein_name)
-  saveRDS(genes_list, genes_filename)
-  
-  cat(sprintf("Gene selection lists saved to %s\n", genes_filename))
+  cat(sprintf("Results saved to %s and %s\n", mspe_filename, vars_filename))
 }
-
