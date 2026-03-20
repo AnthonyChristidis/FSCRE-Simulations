@@ -82,9 +82,7 @@ The output will be saved into a `figures/` directory.
 
 ```bash
 Rscript R/Plot_Table_Simulation_Results.R
-
 Rscript R/Plot_CPU_Results.R
-
 Rscript R/Plot_Application_Results.R
 ```
 
