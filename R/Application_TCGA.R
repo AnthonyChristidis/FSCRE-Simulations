@@ -94,20 +94,16 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
   p <- ncol(x_tr)
   mspe_results <- c()
   selected_vars <- list()
-  time_limit <- 300 # 5 minutes in seconds
   
   # 1. Elastic Net (EN)
   tryCatch({
-    withTimeout({
-      fit <- cv.glmnet(x = x_tr, y = y_tr, alpha = 3/4)
-      mspe_results["ElasticNet"] <- mean((predict(fit, x_te, s = "lambda.min") - y_te)^2)
-      
-      # Extract non-zero coefficients (excluding intercept)
-      coefs <- as.numeric(coef(fit, s = "lambda.min"))[-1]
-      selected_vars[["ElasticNet"]] <- colnames(x_tr)[which(coefs != 0)]
-    }, timeout = time_limit, onTimeout = "error")
+    fit <- cv.glmnet(x = x_tr, y = y_tr, alpha = 3/4)
+    mspe_results["ElasticNet"] <- mean((predict(fit, x_te, s = "lambda.min") - y_te)^2)
+    
+    # Extract non-zero coefficients (excluding intercept)
+    coefs <- as.numeric(coef(fit, s = "lambda.min"))[-1]
+    selected_vars[["ElasticNet"]] <- colnames(x_tr)[which(coefs != 0)]
   }, error = function(e) {
-    if (grepl("Timeout", e$message)) cat(" [EN Timed out] ")
     mspe_results["ElasticNet"] <<- NA
     selected_vars[["ElasticNet"]] <<- character(0)
   })
@@ -116,105 +112,85 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
   x_imp <- x_tr
   y_imp <- y_tr
   tryCatch({
-    withTimeout({
-      ddc_out <- cellWise::DDC(cbind(x_tr, y_tr), DDCpars = list(fastDDC = TRUE, silent = TRUE))
-      x_imp <<- ddc_out$Ximp[, 1:p]   
-      y_imp <<- ddc_out$Ximp[, p+1]
-    }, timeout = time_limit, onTimeout = "error")
+    ddc_out <- cellWise::DDC(cbind(x_tr, y_tr), DDCpars = list(fastDDC = TRUE, silent = TRUE))
+    x_imp <<- ddc_out$Ximp[, 1:p]   
+    y_imp <<- ddc_out$Ximp[, p+1]
   }, error = function(e) {
-    if (grepl("Timeout", e$message)) cat(" [DDC Timed out] ")
+    # If DDC fails, x_imp and y_imp remain the uncleaned x_tr and y_tr
   })
   
   # 2. DDC + EN
   tryCatch({
-    withTimeout({
-      fit <- cv.glmnet(x = x_imp, y = y_imp, alpha = 3/4)
-      mspe_results["DDC_EN"] <- mean((predict(fit, x_te, s = "lambda.min") - y_te)^2)
-      
-      coefs <- as.numeric(coef(fit, s = "lambda.min"))[-1]
-      selected_vars[["DDC_EN"]] <- colnames(x_imp)[which(coefs != 0)]
-    }, timeout = time_limit, onTimeout = "error")
+    fit <- cv.glmnet(x = x_imp, y = y_imp, alpha = 3/4)
+    mspe_results["DDC_EN"] <- mean((predict(fit, x_te, s = "lambda.min") - y_te)^2)
+    
+    coefs <- as.numeric(coef(fit, s = "lambda.min"))[-1]
+    selected_vars[["DDC_EN"]] <- colnames(x_imp)[which(coefs != 0)]
   }, error = function(e) {
-    if (grepl("Timeout", e$message)) cat(" [DDC_EN Timed out] ")
     mspe_results["DDC_EN"] <<- NA
     selected_vars[["DDC_EN"]] <<- character(0)
   })
   
   # 3. DDC + Random GLM
   tryCatch({
-    withTimeout({
-      fit <- randomGLM(x_imp, y_imp, classify = FALSE, nBags = 100, keepModels = TRUE, nThreads = 1, verbose = 0)
-      mspe_results["DDC_RGLM"] <- mean((predict(fit, newdata = x_te) - y_te)^2)
-      
-      # Extract variables selected in > 0 bags
-      sel_counts <- colSums(fit$timesSelectedByForwardRegression)
-      selected_vars[["DDC_RGLM"]] <- colnames(x_imp)[which(sel_counts > 0)]
-    }, timeout = time_limit, onTimeout = "error")
+    fit <- randomGLM(x_imp, y_imp, classify = FALSE, nBags = 100, keepModels = TRUE, nThreads = 1, verbose = 0)
+    mspe_results["DDC_RGLM"] <- mean((predict(fit, newdata = x_te) - y_te)^2)
+    
+    # Extract variables selected in > 0 bags
+    sel_counts <- colSums(fit$timesSelectedByForwardRegression)
+    selected_vars[["DDC_RGLM"]] <- colnames(x_imp)[which(sel_counts > 0)]
   }, error = function(e) {
-    if (grepl("Timeout", e$message)) cat(" [DDC_RGLM Timed out] ")
     mspe_results["DDC_RGLM"] <<- NA
     selected_vars[["DDC_RGLM"]] <<- character(0)
   })
   
   # 4. Sparse Shooting S
   tryCatch({
-    withTimeout({
-      fit <- sparseshooting(x = x_tr, y = y_tr, wvalue = 3, nlambda = 50)
-      preds <- fit$coef[1] + x_te %*% fit$coef[-1]
-      mspe_results["Sparse_S"] <- mean((preds - y_te)^2)
-      
-      coefs <- fit$coef[-1]
-      selected_vars[["Sparse_S"]] <- colnames(x_tr)[which(coefs != 0)]
-    }, timeout = time_limit, onTimeout = "error")
+    fit <- sparseshooting(x = x_tr, y = y_tr, wvalue = 3, nlambda = 50)
+    preds <- fit$coef[1] + x_te %*% fit$coef[-1]
+    mspe_results["Sparse_S"] <- mean((preds - y_te)^2)
+    
+    coefs <- fit$coef[-1]
+    selected_vars[["Sparse_S"]] <- colnames(x_tr)[which(coefs != 0)]
   }, error = function(e) {
-    if (grepl("Timeout", e$message)) cat(" [Sparse_S Timed out] ")
     mspe_results["Sparse_S"] <<- NA
     selected_vars[["Sparse_S"]] <<- character(0)
   })
   
   # 5. CR-Lasso
   tryCatch({
-    withTimeout({
-      fit <- regcell::sregcell_std(y_tr, x_tr)
-      preds <- fit$intercept_hat + x_te %*% fit$betahat
-      mspe_results["CR_Lasso"] <- mean((preds - y_te)^2)
-      
-      coefs <- fit$betahat
-      selected_vars[["CR_Lasso"]] <- colnames(x_tr)[which(coefs != 0)]
-    }, timeout = time_limit, onTimeout = "error")
+    fit <- regcell::sregcell_std(y_tr, x_tr)
+    preds <- fit$intercept_hat + x_te %*% fit$betahat
+    mspe_results["CR_Lasso"] <- mean((preds - y_te)^2)
+    
+    coefs <- fit$betahat
+    selected_vars[["CR_Lasso"]] <- colnames(x_tr)[which(coefs != 0)]
   }, error = function(e) {
-    if (grepl("Timeout", e$message)) cat(" [CR_Lasso Timed out] ")
     mspe_results["CR_Lasso"] <<- NA
     selected_vars[["CR_Lasso"]] <<- character(0)
   })
   
   # 6. RLARS (Proposed, K=1)
   tryCatch({
-    withTimeout({
-      fit <- srlars(x_tr, y_tr, n_models = 1, tolerance = 0.01, robust = TRUE, compute_coef = TRUE)
-      mspe_results["RLARS"] <- mean((predict(fit, newx = x_te, dynamic = FALSE) - y_te)^2)
-      
-      # For K=1, active.sets is a list of length 1
-      selected_vars[["RLARS"]] <- colnames(x_tr)[fit$active.sets[[1]]]
-    }, timeout = time_limit, onTimeout = "error")
+    fit <- srlars(x_tr, y_tr, n_models = 1, tolerance = 0.01, robust = TRUE, compute_coef = TRUE)
+    mspe_results["RLARS"] <- mean((predict(fit, newx = x_te, dynamic = FALSE) - y_te)^2)
+    
+    # For K=1, active.sets is a list of length 1
+    selected_vars[["RLARS"]] <- colnames(x_tr)[fit$active.sets[[1]]]
   }, error = function(e) {
-    if (grepl("Timeout", e$message)) cat(" [RLARS Timed out] ")
     mspe_results["RLARS"] <<- NA
     selected_vars[["RLARS"]] <<- character(0)
   })
   
   # 7. FSCRE (Proposed, K=10)
   tryCatch({
-    withTimeout({
-      fit <- srlars(x_tr, y_tr, n_models = 10, tolerance = 0.01, robust = TRUE, compute_coef = TRUE)
-      mspe_results["FSCRE"] <- mean((predict(fit, newx = x_te, dynamic = FALSE) - y_te)^2)
-      
-      # For K=10, active.sets is a list of K vectors. We want all unique genes selected across the ensemble.
-      all_selected_idx <- unique(unlist(fit$active.sets))
-      selected_vars[["FSCRE"]] <- colnames(x_tr)[all_selected_idx]
-    }, timeout = time_limit, onTimeout = "error")
+    fit <- srlars(x_tr, y_tr, n_models = 10, tolerance = 0.01, robust = TRUE, compute_coef = TRUE)
+    mspe_results["FSCRE"] <- mean((predict(fit, newx = x_te, dynamic = FALSE) - y_te)^2)
+    
+    # For K=10, active.sets is a list of K vectors. We want all unique genes selected across the ensemble.
+    all_selected_idx <- unique(unlist(fit$active.sets))
+    selected_vars[["FSCRE"]] <- colnames(x_tr)[all_selected_idx]
   }, error = function(e) {
-    if (grepl("Timeout", e$message)) cat(" [FSCRE Timed out] ")
     mspe_results["FSCRE"] <<- NA
     selected_vars[["FSCRE"]] <<- character(0)
   })
