@@ -17,7 +17,7 @@ library(regcell)
 library(R.utils)
 
 # Load required source files
-source("R/SparseShootingS/sparseShootingS.R")
+source("SparseShootingS/sparseShootingS.R")
 
 # ------------------------------------------------------------------------
 
