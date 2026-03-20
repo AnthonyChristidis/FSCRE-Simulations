@@ -9,14 +9,25 @@ The core methodology (the FSCRE algorithm) is implemented in the `srlars` R pack
 
 ## Repository Structure
 
-*   **`R/`**: Contains the core simulation and application scripts:
-    *   `generateData.R`: Generates high-dimensional data with block-collinearity and applies 5 distinct contamination scenarios (Casewise, Cellwise Marginal, Cellwise Correlation, and Mixtures).
-    *   `generatePred.R`: Fits the FSCRE algorithm alongside all baseline and state-of-the-art competitor methods, returning performance metrics.
-    *   `simFunc.R` & `generateOutput.R`: Wrapper functions to iterate over sparsity levels and contamination proportions.
-    *   `Generate_Results.R`: The main execution script for the full simulation study. It iterates over all contamination scenarios, SNRs, and parameter grids to generate the complete set of results.
-    *   `Test_Runner.R`: A lightweight script to verify the simulation pipeline locally.
-    *   `Generate_CPU_Results.R`: Script to conduct the computational scalability study, measuring execution time across varying dimensions ($p$) and sample sizes ($n$).
-    *   `Application_TCGA.R`: Script to reproduce the Proteogenomics (TCGA BRCA) real data application (predicting protein abundance from mRNA).
+*   **`R/`**: Contains all R code, organized into the following components:
+    
+    *   **Core Framework & Helpers:**
+        *   `generateData.R`: Generates high-dimensional data with block-collinearity and applies 5 distinct contamination scenarios (Casewise, Cellwise Marginal, Cellwise Correlation, and Mixtures).
+        *   `generatePred.R`: Fits the FSCRE algorithm alongside all baseline and state-of-the-art competitor methods, returning performance metrics.
+        *   `simFunc.R` & `generateOutput.R`: Wrapper functions to iterate over sparsity levels, contamination proportions, and repetitions.
+        *   `Install_Dependencies.R`: Setup script to automatically install all required CRAN, Bioconductor, and GitHub packages.
+
+    *   **Execution Scripts:**
+        *   `Generate_Results.R`: The main execution script for the full simulation study. It iterates over all scenarios, SNRs, and parameter grids.
+        *   `Generate_CPU_Results.R`: Script to conduct the computational scalability study, measuring execution time across varying dimensions ($p$) and sample sizes ($n$).
+        *   `Application_TCGA.R`: Script to reproduce the Proteogenomics (TCGA BRCA) real data application (predicting protein abundance from mRNA).
+        *   `Test_Runner.R`: A lightweight, miniaturized script to verify the simulation pipeline locally before cluster deployment.
+        
+    *   **Visualization & Reporting:**
+        *   `Plot_Table_Simulation_Results.R`: Aggregates simulation `.rds` files to generate the performance tables and figures for the main manuscript.
+        *   `Plot_CPU_Results.R`: Generates the log-log scalability plots from the CPU timing study.
+        *   `Plot_Application_Results.R`: Generates the MSPE boxplots and extracts the gene selection frequency tables for the TCGA application.
+
 *   **`SparseShootingS/`**: Contains the author-provided implementation of the Sparse Shooting S-estimator.
 
 ## Prerequisites and Installation
@@ -58,11 +69,24 @@ Rscript R/Generate_CPU_Results.R
 To reproduce the empirical results on real-world genomic data, run the application script. This script automatically downloads the necessary multi-omics data, performs intersections, introduces targeted artificial contamination for robustness testing, and evaluates the models.
 
 ```bash
-# Run Proteogenomics application
 Rscript R/Application_TCGA.R
 ```
 
 Results will be saved as `.rds` files in the `results/` directory.
+
+### 5. Generating Figures and Tables
+
+Once the execution scripts have completed and populated the `results/` directory with `.rds` files, you can generate the exact figures and summary tables used in the manuscript by running the visualization scripts. 
+
+The output will be saved into a `figures/` directory.
+
+```bash
+Rscript R/Plot_Table_Simulation_Results.R
+
+Rscript R/Plot_CPU_Results.R
+
+Rscript R/Plot_Application_Results.R
+```
 
 ## Citation
 

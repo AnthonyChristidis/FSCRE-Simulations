@@ -207,7 +207,7 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
 # OUTER LOOP OVER TARGET PROTEINS
 # ________________________________
 
-proteins_to_run <- c("EGFR", "ER-alpha")
+proteins_to_run <- c("ER-alpha")
 N_splits <- 50
 
 for (target_protein in proteins_to_run) {
