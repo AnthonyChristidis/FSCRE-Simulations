@@ -1,6 +1,6 @@
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------
 # Generate Simulation Plots (MSPE, Precision, Recall Grids)
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------
 
 # Clear workspace
 rm(list = ls())
@@ -11,7 +11,7 @@ library(dplyr)
 library(tidyr)
 library(gridExtra)
 
-# --------------------------------------------------------------------------
+# --------------------------------------------------------------
 
 # __________________________
 # 1. Load and Compile Data
@@ -24,8 +24,8 @@ p_actives <- c(50, 100, 200)
 scenario <- "mixture_correlation"
 contam_str <- "0.1_0.05"
 
-# Load ALL relevant methods
-methods_to_load <- c("DDC_EN", "DDC_RGLM", "FSCRE")
+# Load ALL relevant methods so we can filter them specifically for different plots
+methods_to_load <- c("DDC_EN", "DDC_RGLM", "RLARS", "FSCRE")
 df_list <- list()
 
 for (s in snrs) {
@@ -69,8 +69,8 @@ cat("Formatting data...\n")
 
 # Standardize method names
 plot_data$Method <- factor(plot_data$Method, 
-                           levels = c("DDC_EN", "DDC_RGLM", "FSCRE"),
-                           labels = c("DDC-EN", "DDC-RGLM", "FSCRE"))
+                           levels = c("DDC_EN", "DDC_RGLM", "RLARS", "FSCRE"),
+                           labels = c("DDC-EN", "DDC-RGLM", "RLARS", "FSCRE"))
 
 # Create nice labels for the facets
 plot_data$SNR_Label <- factor(plot_data$SNR,
@@ -94,8 +94,8 @@ pub_theme <- theme_bw() +
     panel.grid.major.x = element_blank() 
   )
 
-# Grey scale palette 
-fill_colors <- c("DDC-EN" = "grey90", "DDC-RGLM" = "grey60", "FSCRE" = "grey30")
+# Grey scale palette
+fill_colors <- c("DDC-EN" = "grey95", "DDC-RGLM" = "grey65", "RLARS" = "grey65", "FSCRE" = "grey35")
 
 # _________________
 # 3. Generate Plots
@@ -106,23 +106,21 @@ cat("Generating plots...\n")
 if (!dir.exists("figures")) dir.create("figures")
 
 # --- FIGURE 1: MSPE Plot (1x3 Facets) ---
+
+# Filter specifically for the MSPE methods (excluding RLARS to avoid clutter)
 df_mspe <- plot_data %>% filter(Method %in% c("DDC-EN", "DDC-RGLM", "FSCRE"))
 
 # Calculate dynamic y-axis limits to trim ONLY the most extreme, scale-breaking outliers.
 # We use the 99th percentile, which keeps almost all data points while still 
 # preventing a single massive failure from ruining the plot scale.
 max_y_limit <- quantile(df_mspe$MSPE, 0.99, na.rm = TRUE) * 1.1
-
-# For the lower bound, we want it to float naturally, but not drop to 0 
-# if the lowest MSPE is, say, 0.8.
 min_y_limit <- min(df_mspe$MSPE, na.rm = TRUE) * 0.90
 
 p_mspe <- ggplot(df_mspe, aes(x = Sparsity_Label, y = MSPE, fill = Method)) +
   geom_boxplot(width = 0.7, outlier.size = 1, outlier.alpha = 0.5, alpha = 0.9) +
-  # Use scales = "free_y" so each SNR facet can zoom perfectly into its own data range
   facet_grid(. ~ SNR_Label, scales = "free_y") + 
   scale_fill_manual(values = fill_colors) +
-  # coord_cartesian zooms without deleting data used for boxplot calculations
+  # coord_cartesian dynamically zooms without throwing away data used to calculate the box hinges
   coord_cartesian(ylim = c(min_y_limit, max_y_limit)) + 
   labs(
     x = "Number of Active Predictors",
@@ -134,23 +132,24 @@ ggsave("figures/Simulation_MSPE_Grid.pdf", plot = p_mspe, width = 12, height = 5
 
 # --- FIGURE 2: Recall and Precision Plot (2x3 Facets) ---
 
-# Filter strictly for DDC-EN and FSCRE as requested
+# Filter strictly for DDC-EN and FSCRE to show the stark contrast in selection
 df_rcpr <- plot_data %>% filter(Method %in% c("DDC-EN", "FSCRE"))
 
+# Melt the data so RC and PR are in the same column for faceting
 df_rcpr_long <- df_rcpr %>%
   pivot_longer(cols = c(Recall, Precision), names_to = "Metric", values_to = "Value")
 
+# Order the metric factor so Recall is top row, Precision is bottom row
 df_rcpr_long$Metric <- factor(df_rcpr_long$Metric, levels = c("Recall", "Precision"))
 
 p_rcpr <- ggplot(df_rcpr_long, aes(x = Sparsity_Label, y = Value, fill = Method)) +
-  geom_boxplot(width = 0.7, outlier.size = 1, outlier.alpha = 0.5, alpha = 0.9) +
+  geom_boxplot(width = 0.5, outlier.size = 1, outlier.alpha = 0.5, alpha = 0.9) +
   # Use scales = "free_y" so Recall (low values) and Precision (high values) can have independent y-axes
   facet_grid(Metric ~ SNR_Label, scales = "free_y") + 
   scale_fill_manual(values = fill_colors) +
-  # Removed the hardcoded scale_y_continuous(limits=c(0,1)) so it floats naturally
   labs(
     x = "Number of Active Predictors",
-    y = "Proportion"
+    y = NULL
   ) +
   pub_theme
 

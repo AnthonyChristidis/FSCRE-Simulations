@@ -24,7 +24,8 @@ The core methodology (the FSCRE algorithm) is implemented in the `srlars` R pack
         *   `Test_Runner.R`: A lightweight, miniaturized script to verify the simulation pipeline locally before cluster deployment.
         
     *   **Visualization & Reporting:**
-        *   `Plot_Table_Simulation_Results.R`: Aggregates simulation `.rds` files to generate the performance tables and figures for the main manuscript.
+        *   `Plot_Simulation_Results.R`: Aggregates simulation `.rds` files to generate the performance figures for the main manuscript.
+        *   `Tables_Simulation_Results.R`: Aggregates simulation `.rds` files to generate the performance tables for the main manuscript.
         *   `Plot_CPU_Results.R`: Generates the log-log scalability plots from the CPU timing study.
         *   `Plot_Application_Results.R`: Generates the MSPE boxplots and extracts the gene selection frequency tables for the TCGA application.
 
