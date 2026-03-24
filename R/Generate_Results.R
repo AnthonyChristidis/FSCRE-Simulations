@@ -11,9 +11,11 @@ library(parallel)
 # Required source file
 source("R/generateOutput.R")
 
-# ---------------------------------
+# ----------------------------------------
+
+# _________________________________
 # 1. Setting Simulation Parameters 
-# ---------------------------------
+# _________________________________
 
 N <- 50             # Replications
 n <- 50             # Training sample size
@@ -38,9 +40,9 @@ if (!dir.exists("results")) {
   dir.create("results")
 }
 
-# -------------------------
+# ________________________
 # 2. Main Simulation Loop
-# -------------------------
+# ________________________
 
 for(scenario_val in contamination_scenario) {
   

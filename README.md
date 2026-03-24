@@ -20,6 +20,7 @@ The core methodology (the FSCRE algorithm) is implemented in the `srlars` R pack
     *   **Execution Scripts:**
         *   `Generate_Results.R`: The main execution script for the full simulation study. It iterates over all scenarios, SNRs, and parameter grids.
         *   `Generate_CPU_Results.R`: Script to conduct the computational scalability study, measuring execution time across varying dimensions ($p$) and sample sizes ($n$).
+        *   `Sensitivity_Study.R`: Script to conduct the empirical sensitivity analysis for the number of sub-models, evaluating MSPE, Recall, and Precision, and generating the supplementary figure.
         *   `Application_TCGA.R`: Script to reproduce the Proteogenomics (TCGA BRCA) real data application (predicting protein abundance from mRNA).
         *   `Test_Runner.R`: A lightweight, miniaturized script to verify the simulation pipeline locally before cluster deployment.
         
@@ -66,7 +67,14 @@ To reproduce the CPU timing results demonstrating the scalability of FSCRE again
 Rscript R/Generate_CPU_Results.R
 ```
 
-### 4. Bioinformatics Data Application
+### 4. Model Size Sensitivity Study (K)
+To reproduce the supplementary sensitivity analysis evaluating the impact of the number of sub-models ($K$) on FSCRE's predictive accuracy and variable selection, run the sensitivity script. This script evaluates $K$ from 1 to 20 and will automatically output the corresponding 3x3 facet grid figure (`FSCRE_K_Sensitivity.pdf`) into the `figures/` directory.
+
+```bash
+Rscript R/Sensitivity_Study.R
+```
+
+### 5. Bioinformatics Data Application
 To reproduce the empirical results on real-world genomic data, run the application script. This script automatically downloads the necessary multi-omics data, performs intersections, introduces targeted artificial contamination for robustness testing, and evaluates the models.
 
 ```bash
@@ -75,7 +83,7 @@ Rscript R/Application_TCGA.R
 
 Results will be saved as `.rds` files in the `results/` directory.
 
-### 5. Generating Figures and Tables
+### 6. Generating Figures and Tables
 
 Once the execution scripts have completed and populated the `results/` directory with `.rds` files, you can generate the exact figures and summary tables used in the manuscript by running the visualization scripts. 
 
