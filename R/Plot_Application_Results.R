@@ -1,6 +1,6 @@
-# --------------------------------------------------------------------------
-# Generate Simulation Plots (MSPE, Precision, Recall Grids)
-# --------------------------------------------------------------------------
+# ------------------------------------------------------------
+# Generate Bioinformatics Application Plots (MSPE Boxplots)
+# ------------------------------------------------------------
 
 # Clear workspace
 rm(list = ls())
@@ -9,151 +9,168 @@ rm(list = ls())
 library(ggplot2)
 library(dplyr)
 library(tidyr)
-library(gridExtra)
 
-# --------------------------------------------------------------------------
+# ------------------------------------------------------------
 
-# __________________________
-# 1. Load and Compile Data
-# __________________________
+# ______________
+# 1. Load Data
+# ______________
 
-cat("\n--- Loading simulation results across SNRs and Sparsity ---\n")
+cat("\n--- Loading MSPE results ---\n")
 
-snrs <- c(0.5, 1, 2)
-p_actives <- c(50, 100, 200)
-scenario <- "mixture_correlation"
-contam_str <- "0.1_0.05"
+er_file <- "results/Application_TCGA_ER_alpha_MSPE.rds"
 
-# Load ALL relevant methods
-methods_to_load <- c("DDC_EN", "DDC_RGLM", "FSCRE")
-df_list <- list()
-
-for (s in snrs) {
-  for (pa in p_actives) {
-    
-    file_name <- sprintf("results/res_scen=%s_snr=%s_pAct=%s_contam=%s.rds", 
-                         scenario, s, pa, contam_str)
-    
-    if(!file.exists(file_name)) {
-      warning(sprintf("Missing file: %s. Skipping...", file_name))
-      next
-    }
-    
-    res_array <- readRDS(file_name)
-    reps <- dim(res_array)[3]
-    
-    for (m in methods_to_load) {
-      if (m %in% rownames(res_array)) {
-        temp_df <- data.frame(
-          Method = rep(m, reps),
-          Rep = 1:reps,
-          SNR = s,
-          Sparsity = pa,
-          MSPE = res_array[m, "MSPE", ],
-          Precision = res_array[m, "PR", ],
-          Recall = res_array[m, "RC", ]
-        )
-        df_list[[length(df_list) + 1]] <- temp_df
-      }
-    }
-  }
+if(!file.exists(er_file)) {
+  stop("Missing ER-alpha MSPE result file in results/ directory.")
 }
 
-plot_data <- do.call(rbind, df_list)
+er_res <- readRDS(er_file)
+
+# __________________________
+# 2. Reshape Data for Plot
+# __________________________
+
+cat("Reshaping data...\n")
+
+melt_mspe <- function(mat) {
+  df <- as.data.frame(mat)
+  df$Split <- 1:nrow(df)
+  
+  df_long <- pivot_longer(df, 
+                          cols = -Split, 
+                          names_to = "Condition_Method", 
+                          values_to = "MSPE")
+  
+  df_long <- df_long %>%
+    separate(Condition_Method, into = c("Condition", "Method"), sep = "_", extra = "merge")
+  
+  return(df_long)
+}
+
+plot_data <- melt_mspe(er_res)
 
 # _________________________________________
-# 2. Format Data for Plotting
+# 3. Filter and Format Data for Plotting
 # _________________________________________
 
-cat("Formatting data...\n")
+methods_to_keep <- c("ElasticNet", "DDC_EN", "DDC_RGLM", "RLARS", "FSCRE")
+plot_data <- plot_data %>% filter(Method %in% methods_to_keep)
 
-# Standardize method names
 plot_data$Method <- factor(plot_data$Method, 
-                           levels = c("DDC_EN", "DDC_RGLM", "FSCRE"),
-                           labels = c("DDC-EN", "DDC-RGLM", "FSCRE"))
+                           levels = c("ElasticNet", "DDC_EN", "DDC_RGLM", "RLARS", "FSCRE"),
+                           labels = c("EN", "DDC-EN", "DDC-RGLM", "RLARS", "FSCRE"))
 
-# Create nice labels for the facets
-plot_data$SNR_Label <- factor(plot_data$SNR,
-                              levels = c(0.5, 1, 2),
-                              labels = c("Low Signal (SNR = 0.5)", 
-                                         "Moderate Signal (SNR = 1.0)", 
-                                         "High Signal (SNR = 2.0)"))
+plot_data$Condition <- factor(plot_data$Condition, 
+                              levels = c("Orig", "Contam"),
+                              labels = c("Original Data", "Targeted Contamination"))
 
-# Ensure sparsity is treated as a discrete category for the X-axis
-plot_data$Sparsity_Label <- factor(plot_data$Sparsity, levels = c(50, 100, 200))
+# --- Themes and colors ---
 
-# Define a clean, professional black and white theme
 pub_theme <- theme_bw() +
   theme(
     text = element_text(size = 14, family = "sans"),
-    axis.title = element_text(face = "bold"),
+    axis.title = element_text(face = "bold", size = 15),
+    axis.text = element_text(size = 12, color = "black"),
     legend.position = "bottom",
     legend.title = element_blank(),
-    strip.text = element_text(face = "bold", size = 12), 
-    strip.background = element_rect(fill = "grey90", color = "black"),
-    panel.grid.major.x = element_blank() 
+    legend.text = element_text(size = 13, face = "bold"),
+    legend.key.size = unit(1.5, "lines"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    panel.grid.major.x = element_blank(), 
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(color = "grey85", linetype = "dashed") 
   )
 
-# Grey scale palette 
-fill_colors <- c("DDC-EN" = "grey90", "DDC-RGLM" = "grey60", "FSCRE" = "grey30")
+# The "Baseline vs. Stress" Palette
+# Grey = Clean baseline. Crimson Red = The stress test (zero orange undertones). 
+fill_colors <- c(
+  "Original Data"          = "#E0E0E0",  # Light, clean grey
+  "Targeted Contamination" = "#C41E3A"   # True Crimson / Cardinal Red
+)
 
 # _________________
-# 3. Generate Plots
+# 4. Generate Plot
 # _________________
 
-cat("Generating plots...\n")
+cat("Generating plot...\n")
+
+final_plot <- ggplot(plot_data, aes(x = Method, y = MSPE, fill = Condition)) +
+  # Setting both widths to 0.5 makes them skinny but perfectly touching
+  geom_boxplot(width = 0.5, position = position_dodge(width = 0.5), 
+               outlier.size = 1.5, outlier.shape = 21, outlier.alpha = 0.6, 
+               alpha = 0.9, color = "black", linewidth = 0.6) +
+  scale_fill_manual(values = fill_colors) +
+  labs(
+    x = NULL,
+    y = "Mean Squared Prediction Error (MSPE)"
+  ) +
+  pub_theme
+
+# __________________
+# 5. Save the Plot
+# __________________
+
+cat("Saving plot...\n")
 
 if (!dir.exists("figures")) dir.create("figures")
 
-# --- FIGURE 1: MSPE Plot (1x3 Facets) ---
-df_mspe <- plot_data %>% filter(Method %in% c("DDC-EN", "DDC-RGLM", "FSCRE"))
-
-# Calculate dynamic y-axis limits to trim ONLY the most extreme, scale-breaking outliers.
-# We use the 99th percentile, which keeps almost all data points while still 
-# preventing a single massive failure from ruining the plot scale.
-max_y_limit <- quantile(df_mspe$MSPE, 0.99, na.rm = TRUE) * 1.1
-
-# For the lower bound, we want it to float naturally, but not drop to 0 
-# if the lowest MSPE is, say, 0.8.
-min_y_limit <- min(df_mspe$MSPE, na.rm = TRUE) * 0.90
-
-p_mspe <- ggplot(df_mspe, aes(x = Sparsity_Label, y = MSPE, fill = Method)) +
-  geom_boxplot(width = 0.7, outlier.size = 1, outlier.alpha = 0.5, alpha = 0.9) +
-  # Use scales = "free_y" so each SNR facet can zoom perfectly into its own data range
-  facet_grid(. ~ SNR_Label, scales = "free_y") + 
-  scale_fill_manual(values = fill_colors) +
-  # coord_cartesian zooms without deleting data used for boxplot calculations
-  coord_cartesian(ylim = c(min_y_limit, max_y_limit)) + 
-  labs(
-    x = "Number of Active Predictors",
-    y = "MSPE"
-  ) +
-  pub_theme
-
-ggsave("figures/Simulation_MSPE_Grid.pdf", plot = p_mspe, width = 12, height = 5, units = "in")
-
-# --- FIGURE 2: Recall and Precision Plot (2x3 Facets) ---
-
-# Filter strictly for DDC-EN and FSCRE as requested
-df_rcpr <- plot_data %>% filter(Method %in% c("DDC-EN", "FSCRE"))
-
-df_rcpr_long <- df_rcpr %>%
-  pivot_longer(cols = c(Recall, Precision), names_to = "Metric", values_to = "Value")
-
-df_rcpr_long$Metric <- factor(df_rcpr_long$Metric, levels = c("Recall", "Precision"))
-
-p_rcpr <- ggplot(df_rcpr_long, aes(x = Sparsity_Label, y = Value, fill = Method)) +
-  geom_boxplot(width = 0.7, outlier.size = 1, outlier.alpha = 0.5, alpha = 0.9) +
-  # Use scales = "free_y" so Recall (low values) and Precision (high values) can have independent y-axes
-  facet_grid(Metric ~ SNR_Label, scales = "free_y") + 
-  scale_fill_manual(values = fill_colors) +
-  # Removed the hardcoded scale_y_continuous(limits=c(0,1)) so it floats naturally
-  labs(
-    x = "Number of Active Predictors",
-    y = "Proportion"
-  ) +
-  pub_theme
-
-ggsave("figures/Simulation_RCPR_Grid.pdf", plot = p_rcpr, width = 12, height = 7, units = "in")
+ggsave("figures/Application_MSPE_Plot.pdf", plot = final_plot, width = 8, height = 6, units = "in")
 
 cat("Done. Plots saved to figures/ directory.\n")
+
+# ______________________________________
+# 6. Gene Selection Stability Analysis
+# ______________________________________
+
+cat("\n\n--- Gene Selection Stability Analysis (ER-alpha) ---\n")
+
+genes_file <- "results/Application_TCGA_ER_alpha_Genes.rds"
+
+if(!file.exists(genes_file)) {
+  stop("Missing Genes result file in results/ directory.")
+}
+
+genes_res <- readRDS(genes_file)
+n_splits <- length(genes_res)
+
+get_selection_props <- function(results_list, condition, method) {
+  all_genes_selected <- lapply(results_list, function(split) {
+    if (!is.null(split[[condition]][[method]])) {
+      return(split[[condition]][[method]])
+    } else {
+      return(character(0))
+    }
+  })
+  
+  flat_genes <- unlist(all_genes_selected)
+  gene_counts <- table(flat_genes)
+  gene_props <- gene_counts / n_splits
+  return(gene_props)
+}
+
+props_fscre_contam <- get_selection_props(genes_res, "Contam", "FSCRE")
+props_en_contam <- get_selection_props(genes_res, "Contam", "ElasticNet")
+props_en_orig <- get_selection_props(genes_res, "Orig", "ElasticNet")
+props_ddc_en_contam <- get_selection_props(genes_res, "Contam", "DDC_EN")
+
+all_fscre_genes <- names(props_fscre_contam)
+
+selection_table <- data.frame(
+  Gene = all_fscre_genes,
+  FSCRE_Contam = as.numeric(props_fscre_contam),
+  stringsAsFactors = FALSE
+)
+
+selection_table$DDC_EN_Contam <- as.numeric(props_ddc_en_contam[selection_table$Gene])
+selection_table$DDC_EN_Contam[is.na(selection_table$DDC_EN_Contam)] <- 0
+
+selection_table$EN_Contam <- as.numeric(props_en_contam[selection_table$Gene])
+selection_table$EN_Contam[is.na(selection_table$EN_Contam)] <- 0
+
+selection_table$EN_Orig <- as.numeric(props_en_orig[selection_table$Gene])
+selection_table$EN_Orig[is.na(selection_table$EN_Orig)] <- 0
+
+selection_table <- selection_table[order(selection_table$FSCRE_Contam, decreasing = TRUE), ]
+
+cat("\nTop 20 Genes Selected by FSCRE under Targeted Contamination:\n")
+print(head(selection_table, 20), row.names = FALSE)
