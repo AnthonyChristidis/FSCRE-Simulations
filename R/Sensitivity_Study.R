@@ -17,7 +17,6 @@ source("R/computeRCPR.R")
 
 # -------------------------------------------------------------
 
-
 # _________________________________________________
 # 1. Custom Prediction Function for K-Sensitivity
 # _________________________________________________
@@ -167,21 +166,14 @@ for (p_active_val in p_active_vec) {
                      "_contam=", contam_str, ".rds")
   
   if (file.exists(filename)) {
-    # Load the array: Dimensions are [K, Metrics, Replications]
     res_array <- readRDS(filename)
-    
-    # Calculate the median across the 50 replications (margin 3)
-    # Using median is standard for robust statistics evaluations
     res_median <- apply(res_array, c(1, 2), median, na.rm = TRUE)
     
-    # Convert to data frame
     df_temp <- as.data.frame(res_median)
     df_temp$K <- K_vec
     df_temp$p_active <- paste0("Active Predictors: ", p_active_val, " (", (p_active_val/500)*100, "%)")
     
-    # Append to master data frame
     summary_data <- bind_rows(summary_data, df_temp)
-    
   } else {
     warning(paste("File not found:", filename))
   }
@@ -191,12 +183,10 @@ for (p_active_val in p_active_vec) {
 # Data Formatting for ggplot2
 # _____________________________
 
-# Pivot the data into "long" format for facet plotting
 plot_data <- summary_data |>
   select(K, p_active, MSPE, RC, PR) |>
   pivot_longer(cols = c(MSPE, RC, PR), names_to = "Metric", values_to = "Value")
 
-# Reorder factor levels so the panels appear in a logical order
 plot_data$Metric <- factor(plot_data$Metric, 
                            levels = c("MSPE", "RC", "PR"), 
                            labels = c("Prediction Error (MSPE)", "Recall", "Precision"))
@@ -206,35 +196,44 @@ plot_data$p_active <- factor(plot_data$p_active,
                                         "Active Predictors: 100 (20%)", 
                                         "Active Predictors: 200 (40%)"))
 
+# --------------------------------------------------------------
+# PUBLICATION-READY THEME & COLORS
+# --------------------------------------------------------------
+
+pub_theme <- theme_bw() +
+  theme(
+    text = element_text(size = 14, family = "sans"),
+    axis.title = element_text(face = "bold", size = 15),
+    axis.text = element_text(size = 12, color = "black"),
+    strip.text = element_text(face = "bold", size = 13),
+    strip.background = element_rect(fill = "grey90", color = "black", linewidth = 1),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "grey85", linetype = "dashed")
+  )
+
+# Use the established FSCRE Deep Blue
+fscre_color <- "#0072B2"
+
 # _____________________
 # Generate the Figure
 # _____________________
 
+if (!dir.exists("figures")) dir.create("figures")
+
 p <- ggplot(plot_data, aes(x = K, y = Value)) +
-  # Add lines and points
-  geom_line(color = "black", size = 0.8) +
-  geom_point(color = "black", size = 1.5) +
-  # Create the 3x3 grid (Metrics on rows, Sparsity on columns)
+  geom_line(color = fscre_color, linewidth = 1.2) +
+  geom_point(color = fscre_color, size = 2.5) +
   facet_grid(Metric ~ p_active, scales = "free_y") +
-  # Clean up X-axis breaks
-  scale_x_continuous(breaks = seq(2, 20, by = 2)) +
-  # Publication-ready theme
-  theme_bw(base_size = 14) +
-  theme(
-    strip.background = element_rect(fill = "grey90", color = "black"),
-    strip.text = element_text(face = "bold"),
-    panel.grid.minor = element_blank(),
-    axis.text = element_text(color = "black")
-  ) +
+  scale_x_continuous(breaks = c(1, 5, 10, 15, 20)) +
+  pub_theme +
   labs(
-    x = expression(paste("Number of Models (", italic("K"), ")")),
+    x = expression(bold("Number of Models (") * italic(K) * bold(")")),
     y = "Median Performance Value"
   )
 
-# Print the plot to the Viewer
 print(p)
 
-# Save the plot as a high-resolution PDF for your supplementary material
 ggsave(filename = "figures/FSCRE_K_Sensitivity.pdf", plot = p, 
        width = 10, height = 7, units = "in", dpi = 300)
 
