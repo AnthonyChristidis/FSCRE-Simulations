@@ -101,18 +101,19 @@ if (!requireNamespace("srlars", quietly = TRUE)) {
   # Try CRAN first
   tryCatch({
     install.packages("srlars")
+    # If CRAN doesn't have 3.0.0 yet, catch it in the version check below
   }, error = function(e) {
     cat("Could not find on CRAN. Falling back to GitHub...\n")
     remotes::install_github("AnthonyChristidis/srlars", upgrade = "never", quiet = TRUE)
   })
-} else {
+}
+
+# Ensure the correct new version (3.0.0) is installed
+if (requireNamespace("srlars", quietly = TRUE)) {
   curr_ver <- as.character(packageVersion("srlars"))
-  if (curr_ver != "2.0.1") {
-    cat(sprintf("Updating srlars to v2.0.1...\n"))
-    # Assuming v2.0.1 is the version you submitted/are hosting
-    # If it's not on CRAN yet, use GitHub:
-    # remotes::install_github("AnthonyChristidis/srlars@v2.0.1", upgrade="never")
-    install.packages("srlars") 
+  if (curr_ver != "3.0.0") {
+    cat(sprintf("Updating srlars from %s to v3.0.0 via GitHub...\n", curr_ver))
+    remotes::install_github("AnthonyChristidis/srlars", upgrade = "never", quiet = TRUE)
   } else {
     cat(sprintf("srlars (v%s) is already installed.\n", curr_ver))
   }
