@@ -18,7 +18,7 @@ library(regcell)
 source("R/computeRCPR.R") 
 source("SparseShootingS/sparseShootingS.R")
 
-generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
+generatePred <- function(sim_data, n_models = 10, tolerance = 1e-8, ...) {
   
   N <- length(sim_data$training_data$xtrain) 
   p.active <- sim_data$pactive 
@@ -52,14 +52,20 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
     # Ensure y is numeric vector
     ytrain <- as.numeric(ytrain)
     
-    # ------------------------------------
+    # Add column names to ensure DDCpredict works properly across train and test
+    colnames(xtrain) <- paste0("V", 1:p)
+    colnames(xtestdata) <- paste0("V", 1:p)
+    
+    # ____________________________________
     # 1. Baseline: Elastic Net (Raw Data)
-    # ------------------------------------
+    # ____________________________________
+
     en_final <- tryCatch({
-      cpu <- system.time(
+      cpu <- system.time({
         fit <- glmnet::cv.glmnet(x = xtrain, y = ytrain, alpha = 3/4)
-      )["elapsed"]
-      preds <- predict(fit, xtestdata, s = "lambda.min")
+        preds <- predict(fit, xtestdata, s = "lambda.min")
+      })["elapsed"]
+      
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       coefs <- as.numeric(coef(fit, s = "lambda.min"))[-1]
       metrics <- computeRCPR(coefs, sim_data$active_ind)
@@ -67,31 +73,43 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
     }, error = function(e) c(NA, NA, NA, NA))
     pred_output["ElasticNet",, i] <- en_final
     
-    # ------------------------------------------
-    # 2. Shared Data Cleaning for DDC baselines
-    # ------------------------------------------
+    # _______________________________________________________________
+    # 2. Shared Data Cleaning for DDC baselines (X-Only, No Leakage)
+    # _______________________________________________________________
+
     ddc_cpu <- 0
     x_imp <- xtrain
     y_imp <- ytrain
+    xtest_imp <- xtestdata
     
     tryCatch({
       ddc_cpu <- system.time({
-        ddc_out <- cellWise::DDC(cbind(xtrain, ytrain), DDCpars = list(fastDDC = TRUE, silent = TRUE))
-        x_imp <- ddc_out$Ximp[, 1:p]
-        y_imp <- ddc_out$Ximp[, p+1]
+        # Clean predictors ONLY
+        ddc_out <- cellWise::DDC(xtrain, DDCpars = list(fastDDC = TRUE, silent = TRUE))
+        x_imp <- ddc_out$Ximp
+        
+        # Apply the trained DDC to the test set predictors
+        ddc_test <- cellWise::DDCpredict(xtestdata, ddc_out)
+        xtest_imp <- ddc_test$Ximp
+        
+        # Robust univariate wrap for the response
+        y_imp <- as.numeric(cellWise::wrap(as.matrix(ytrain))$Xw)
       })["elapsed"]
     }, error = function(e) {
       warning("Shared DDC failed. Baselines will use raw data.")
     })
 
-    # -------------------------------
+    # ________________________________
     # 3. Baseline: DDC + Elastic Net
-    # -------------------------------
+    # ________________________________
+
     ddc_en_final <- tryCatch({
-      cpu <- system.time(
+      cpu <- system.time({
         fit <- glmnet::cv.glmnet(x = x_imp, y = y_imp, alpha = 3/4)
-      )["elapsed"]
-      preds <- predict(fit, xtestdata, s = "lambda.min")
+        # Predict on the DDC-cleaned test data
+        preds <- predict(fit, xtest_imp, s = "lambda.min")
+      })["elapsed"]
+      
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       coefs <- as.numeric(coef(fit, s = "lambda.min"))[-1]
       metrics <- computeRCPR(coefs, sim_data$active_ind)
@@ -99,17 +117,18 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
     }, error = function(e) c(NA, NA, NA, NA))
     pred_output["DDC_EN",, i] <- ddc_en_final
     
-    # ------------------------------
+    # _______________________________
     # 4. Baseline: DDC + Random GLM
-    # ------------------------------
+    # _______________________________
+
     ddc_rglm_final <- tryCatch({
-      cpu <- system.time(
-        # classify=FALSE is critical for regression
+      cpu <- system.time({
         fit <- randomGLM::randomGLM(x_imp, y_imp, classify = FALSE, nBags = 100, keepModels = TRUE, nThreads = 1, verbose = 0)
-      )["elapsed"]
-      preds <- predict(fit, newdata = xtestdata)
-      mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
+        # Predict on the DDC-cleaned test data
+        preds <- predict(fit, newdata = xtest_imp)
+      })["elapsed"]
       
+      mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       sel_counts <- colSums(fit$timesSelectedByForwardRegression)
       coefs <- rep(0, p)
       coefs[sel_counts > 0] <- 1
@@ -119,14 +138,16 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
     }, error = function(e) c(NA, NA, NA, NA))
     pred_output["DDC_RGLM",, i] <- ddc_rglm_final
 
-    # ---------------------------------------
+    # _______________________________________
     # 5. State-of-the-Art: Sparse Shooting S
-    # ---------------------------------------
+    # _______________________________________
+
     sps_final <- tryCatch({
-      cpu <- system.time(
+      cpu <- system.time({
         fit <- sparseshooting(x = xtrain, y = ytrain, wvalue = 3, nlambda = 50) 
-      )["elapsed"]
-      preds <- fit$coef[1] + xtestdata %*% fit$coef[-1]
+        preds <- fit$coef[1] + xtestdata %*% fit$coef[-1]
+      })["elapsed"]
+      
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       coefs <- fit$coef[-1]
       metrics <- computeRCPR(coefs, sim_data$active_ind)
@@ -134,15 +155,16 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
     }, error = function(e) c(NA, NA, NA, NA))
     pred_output["Sparse_S",, i] <- sps_final
     
-    # ------------------------------
+    # ______________________________
     # 6. State-of-the-Art: CR-Lasso
-    # ------------------------------
+    # ______________________________
+
     cr_lasso_final <- tryCatch({
-      cpu <- system.time(
+      cpu <- system.time({
         fit <- regcell::sregcell_std(ytrain, xtrain)
-      )["elapsed"]
+        preds <- fit$intercept_hat + xtestdata %*% fit$betahat
+      })["elapsed"]
       
-      preds <- fit$intercept_hat + xtestdata %*% fit$betahat
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       coefs <- fit$betahat
       metrics <- computeRCPR(coefs, sim_data$active_ind)
@@ -151,14 +173,25 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
     }, error = function(e) c(NA, NA, NA, NA))
     pred_output["CR_Lasso",, i] <- cr_lasso_final
 
-    # -------------------------
+    # _________________________
     # 7. Proposed: RLARS (K=1)
-    # -------------------------
+    # _________________________
+
     rlars_final <- tryCatch({
-      cpu <- system.time(
-        fit <- srlars::srlars(xtrain, ytrain, n_models = 1, tolerance = tolerance, robust = TRUE, compute_coef = TRUE)
-      )["elapsed"]
-      preds <- predict(fit, newx = xtestdata, dynamic = FALSE) 
+      cpu <- system.time({
+        fit <- srlars::srlars(xtrain, ytrain, 
+                              n_models = 1, 
+                              tolerance = tolerance, 
+                              x_preprocess = "ddc", 
+                              y_preprocess = "wrap", 
+                              cor_estimator = "wrap", 
+                              cv_preprocess = "global", 
+                              cv_fit = "huber", 
+                              cv_loss = "huber", 
+                              compute_coef = TRUE)
+        preds <- predict(fit, newx = xtestdata) 
+      })["elapsed"]
+      
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       coefs <- coef(fit)[-1]
       metrics <- computeRCPR(coefs, sim_data$active_ind)
@@ -166,14 +199,25 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
     }, error = function(e) c(NA, NA, NA, NA))
     pred_output["RLARS",, i] <- rlars_final
 
-    # --------------------------
+    # __________________________
     # 8. Proposed: FSCRE (K=10)
-    # --------------------------
+    # __________________________
+
     fscre_final <- tryCatch({
-      cpu <- system.time(
-        fit <- srlars::srlars(xtrain, ytrain, n_models = n_models, tolerance = tolerance, robust = TRUE, compute_coef = TRUE)
-      )["elapsed"]
-      preds <- predict(fit, newx = xtestdata, dynamic = FALSE) 
+      cpu <- system.time({
+        fit <- srlars::srlars(xtrain, ytrain, 
+                              n_models = n_models, 
+                              tolerance = tolerance, 
+                              x_preprocess = "ddc", 
+                              y_preprocess = "wrap", 
+                              cor_estimator = "wrap", 
+                              cv_preprocess = "global", 
+                              cv_fit = "huber", 
+                              cv_loss = "huber", 
+                              compute_coef = TRUE)
+        preds <- predict(fit, newx = xtestdata) 
+      })["elapsed"]
+      
       mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
       coefs <- coef(fit)[-1]
       metrics <- computeRCPR(coefs, sim_data$active_ind)
@@ -181,20 +225,22 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
     }, error = function(e) c(NA, NA, NA, NA))
     pred_output["FSCRE",, i] <- fscre_final
 
-    # ----------------------
+    # ________________------
     # Casewise Only Methods
-    # ----------------------
+    # ________________------
+    
     if(sim_data$contamination.scenario == "casewise"){
       
       # PENSE
       pense_final <- tryCatch({
-        cpu <- system.time(
+        cpu <- system.time({
           fit <- pense::adapense_cv(x = xtrain, y = ytrain, alpha = 3/4, 
             cv_k = 5, cv_repl = 1, eps = 5e-1, explore_tol = 5e-1, 
             enpy_opts = pense::enpy_options(retain_max = 5),
             cl = cluster)
-        )["elapsed"]
-        preds <- predict(fit, xtestdata)
+          preds <- predict(fit, xtestdata)
+        })["elapsed"]
+        
         mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
         coefs <- coef(fit)[-1]
         metrics <- computeRCPR(coefs, sim_data$active_ind)
@@ -206,10 +252,11 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
       slts_final <- tryCatch({
         lambda_max <- robustHD::lambda0(xtrain, ytrain)
         lambda_grid = rev(exp(seq(log(1e-2*lambda_max), log(lambda_max), length = 20)))
-        cpu <- system.time(
+        cpu <- system.time({
           fit <- robustHD::sparseLTS(x = xtrain, y = c(ytrain), lambda = lambda_grid, mode = "lambda", cluster = cluster)
-        )["elapsed"]
-        preds <- predict(fit, xtestdata)
+          preds <- predict(fit, xtestdata)
+        })["elapsed"]
+        
         mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
         coefs <- coef(fit)[-1]
         metrics <- computeRCPR(coefs, sim_data$active_ind)
@@ -223,4 +270,3 @@ generatePred <- function(sim_data, n_models = 10, tolerance = 0, ...) {
   
   return(pred_output)
 }
-
