@@ -33,7 +33,7 @@ p_active_vec <- c(50, 100, 200)
 
 # Method Parameters
 n_models <- 10        # K=10 as stated in Section 5.2
-sim_tolerance <- 1e-5 # Low tolerance needed for this hard setting
+sim_tolerance <- 1e-8 # Strict, non-negative tolerance
 
 # Create results directory if it doesn't exist
 if (!dir.exists("results")) {
@@ -48,7 +48,7 @@ for(scenario_val in contamination_scenario) {
   
   # Determine the specific contamination proportions to loop over based on scenario
   if(scenario_val == "casewise") {
-    props_to_test <- list(0, 0.1, 0.2) 
+    props_to_test <- list(0, 0.1, 0.2) # 0 acts as the clean data baseline
   } else if (scenario_val %in% c("cellwise_marginal", "cellwise_correlation")) {
     props_to_test <- list(0.05, 0.1) 
   } else if(scenario_val %in% c("mixture_marginal", "mixture_correlation")) {
@@ -80,15 +80,24 @@ for(scenario_val in contamination_scenario) {
         }
         
         # Generate results for this specific configuration
+        # Passing the updated FSCRE configuration arguments down the chain
         results <- generateOutput(N = N, n = n, m = m, p = p, 
                                   rho = rho, rho.inactive = rho.inactive,
                                   p.active = p_active_val, group.size = group.size, 
                                   snr = snr_val, 
                                   contamination.prop = contam_val, 
                                   contamination.scenario = scenario_val,
-                                  seed = 0, # Consider a dynamic seed if needed
+                                  seed = 0, 
                                   n_models = n_models,
-                                  tolerance = sim_tolerance) 
+                                  tolerance = sim_tolerance,
+                                  # --- New FSCRE Configuration ---
+                                  x_preprocess = "ddc",
+                                  y_preprocess = "wrap",
+                                  cor_estimator = "wrap",
+                                  cv_preprocess = "global",
+                                  cv_fit = "huber",
+                                  cv_loss = "huber",
+                                  cv_folds = 5) 
         
         # Save JUST the single array object
         saveRDS(results, file = filename)
