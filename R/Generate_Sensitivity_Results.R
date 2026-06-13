@@ -21,11 +21,15 @@ source("R/computeRCPR.R")
 # 1. Custom Prediction Function for K-Sensitivity
 # _________________________________________________
 
-generatePred_K_Sensitivity <- function(sim_data, K_vec, tolerance = 1e-5) {
+generatePred_K_Sensitivity <- function(sim_data, K_vec, tolerance = 1e-8) {
   
   N <- length(sim_data$training_data$xtrain) 
+  p <- sim_data$p
   xtestdata <- sim_data$testing_data$xtest 
   ytestdata <- sim_data$testing_data$ytest
+  
+  # Ensure column names for DDCpredict compatibility
+  colnames(xtestdata) <- paste0("V", 1:p)
   
   # Setup output array: Rows = K values, Cols = Metrics, Slices = Replications
   pred_output <- array(dim = c(length(K_vec), 4, N))
@@ -36,6 +40,7 @@ generatePred_K_Sensitivity <- function(sim_data, K_vec, tolerance = 1e-5) {
     cat("\n Iteration:", i, "of", N, "| Evaluating K =")
     
     xtrain <- sim_data$training_data$xtrain[[i]]
+    colnames(xtrain) <- paste0("V", 1:p)
     ytrain <- as.numeric(sim_data$training_data$ytrain[[i]])
     
     for(k_idx in seq_along(K_vec)) {
@@ -47,11 +52,21 @@ generatePred_K_Sensitivity <- function(sim_data, K_vec, tolerance = 1e-5) {
       # _______________________________
 
       fscre_final <- tryCatch({
-        cpu <- system.time(
-          fit <- srlars::srlars(xtrain, ytrain, n_models = K, tolerance = tolerance, 
-                                robust = TRUE, compute_coef = TRUE)
-        )["elapsed"]
-        preds <- predict(fit, newx = xtestdata, dynamic = FALSE) 
+        cpu <- system.time({
+          fit <- srlars::srlars(xtrain, ytrain, 
+                                n_models = K, 
+                                tolerance = tolerance, 
+                                x_preprocess = "ddc",
+                                y_preprocess = "wrap",
+                                cor_estimator = "wrap",
+                                cv_preprocess = "global",
+                                cv_fit = "huber",
+                                cv_loss = "huber",
+                                compute_coef = TRUE)
+          # Predict automatically handles DDCpredict on the test set
+          preds <- predict(fit, newx = xtestdata) 
+        })["elapsed"]
+        
         mspe <- mean((preds - ytestdata)^2) / sim_data$sigma^2
         coefs <- coef(fit)[-1]
         metrics <- computeRCPR(coefs, sim_data$active_ind)
@@ -82,7 +97,7 @@ rho <- 0.8
 scenario_val <- "mixture_correlation"
 snr_val <- 1.0            # Moderate signal
 contam_val <- c(0.1, 0.05)
-sim_tolerance <- 1e-5     # Low tolerance needed for this hard setting
+sim_tolerance <- 1e-8     # Strict, non-negative tolerance
 
 # Loop grids
 p_active_vec <- c(50, 100, 200)             # High, Moderate, and Low sparsity
@@ -196,9 +211,12 @@ plot_data$p_active <- factor(plot_data$p_active,
                                         "Active Predictors: 100 (20%)", 
                                         "Active Predictors: 200 (40%)"))
 
-# --------------------------------------------------------------
-# PUBLICATION-READY THEME & COLORS
-# --------------------------------------------------------------
+# Extract the RLARS Baseline (K=1) to plot as a horizontal line
+rlars_data <- plot_data |> filter(K == 1)
+
+# 
+# --- PUBLICATION-READY THEME & COLORS ---
+# 
 
 pub_theme <- theme_bw() +
   theme(
@@ -209,11 +227,14 @@ pub_theme <- theme_bw() +
     strip.background = element_rect(fill = "grey90", color = "black", linewidth = 1),
     panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
     panel.grid.minor = element_blank(),
-    panel.grid.major = element_line(color = "grey85", linetype = "dashed")
+    panel.grid.major = element_line(color = "grey85", linetype = "dashed"),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 13)
   )
 
-# Use the established FSCRE Deep Blue
 fscre_color <- "#0072B2"
+rlars_color <- "#D55E00"
 
 # _____________________
 # Generate the Figure
@@ -222,10 +243,16 @@ fscre_color <- "#0072B2"
 if (!dir.exists("figures")) dir.create("figures")
 
 p <- ggplot(plot_data, aes(x = K, y = Value)) +
-  geom_line(color = fscre_color, linewidth = 1.2) +
-  geom_point(color = fscre_color, size = 2.5) +
+  # Add the RLARS (K=1) horizontal baseline
+  geom_hline(data = rlars_data, aes(yintercept = Value, linetype = "RLARS (Single Model)"), 
+             color = rlars_color, linewidth = 1) +
+  # Add the FSCRE curve
+  geom_line(aes(color = "FSCRE (Ensemble)"), linewidth = 1.2) +
+  geom_point(aes(color = "FSCRE (Ensemble)"), size = 2.5) +
   facet_grid(Metric ~ p_active, scales = "free_y") +
   scale_x_continuous(breaks = c(1, 5, 10, 15, 20)) +
+  scale_color_manual(values = c("FSCRE (Ensemble)" = fscre_color)) +
+  scale_linetype_manual(values = c("RLARS (Single Model)" = "dashed")) +
   pub_theme +
   labs(
     x = expression(bold("Number of Models (") * italic(K) * bold(")")),
