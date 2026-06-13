@@ -27,15 +27,15 @@ snr_test <- 1            # Only test one SNR
 rho_test <- 0.8
 rho_inactive_test <- 0.2
 group_size_test <- 5
-n_models_test <- 5   # Ensemble size
-sim_tolerance <- 1e-3
+n_models_test <- 5       # Ensemble size
+sim_tolerance <- 1e-8    # Strict positive tolerance
 
-# Scenarios to test
+# Scenarios to test (testing all 5)
 scenarios_to_test <- c("casewise", 
                        "cellwise_marginal", 
                        "cellwise_correlation",
                        "mixture_marginal", 
-                       "mixture_correlation")[5]
+                       "mixture_correlation")[3]
 
 # Ensure output directory exists
 if (!dir.exists("test_results")) {
@@ -81,7 +81,15 @@ for(scenario_val in scenarios_to_test) {
                               contamination.scenario = scenario_val,
                               seed = 0, 
                               n_models = n_models_test,
-                              tolerance = sim_tolerance)
+                              tolerance = sim_tolerance,
+                              # --- New FSCRE Configuration ---
+                              x_preprocess = "ddc",
+                              y_preprocess = "wrap",
+                              cor_estimator = "wrap",
+                              cv_preprocess = "global",
+                              cv_fit = "huber",
+                              cv_loss = "huber",
+                              cv_folds = 5)
     
     # Save the output
     saveRDS(results, file = filename)
