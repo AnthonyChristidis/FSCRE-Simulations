@@ -87,23 +87,19 @@ generateData <- function(N,
   } else if(contamination.scenario == "cellwise_marginal") {
       
     for(i in 1:N) {
-      contamination_indices <- sample(1:(n * (p + 1)), round(n * (p + 1) * contamination.prop))
-      xy_train <-  cbind(xlist[[i]], ylist[[i]])
-      xy_train[contamination_indices] <- NA
-      for(row_id in 1:n){
-        cells_id <- which(is.na(xy_train[row_id,]))
-        if(length(cells_id) > 0) {
-           xy_train[row_id, cells_id] <- rnorm(length(cells_id), cell.mean, 1)
-        }
-      }
-      xlist[[i]] <- xy_train[, -(p + 1)]
-      ylist[[i]] <- xy_train[, (p + 1)]
+      x_train <- xlist[[i]]
+      # Contaminate ONLY the predictors (X), leaving y clean
+      contamination_indices <- sample.int(n * p, round(n * p * contamination.prop))
+      x_train[contamination_indices] <- rnorm(length(contamination_indices), cell.mean, 1)
+      
+      xlist[[i]] <- x_train
+      # ylist[[i]] remains unchanged
     }
       
   } else if(contamination.scenario == "cellwise_correlation") {
       
     for(i in 1:N) {
-      contamination_indices <- sample(1:(n * p), round(n * p * contamination.prop))
+      contamination_indices <- sample.int(n * p, round(n * p * contamination.prop))
       x_train <- xlist[[i]]
       x_train[contamination_indices] <- NA
       for(row_id in 1:n){
@@ -113,13 +109,14 @@ generateData <- function(N,
             # Multivariate correlation outlier
             mu_cells <- rep(0, length(cells_id))
             sigma_cells <- sigma.mat[cells_id, cells_id, drop=FALSE]
-            eigen_vec <- eigen(sigma_cells)$vectors[, length(cells_id)]
-            # Fix: Transpose eigen_vec for mahalanobis
-            x_train[row_id, cells_id] <- gamma * sqrt(length(cells_id)) * t(eigen_vec) /
-              sqrt(mahalanobis(t(eigen_vec), mu_cells, sigma_cells))
+            # Use symmetric=TRUE for safety
+            eigen_vec <- eigen(sigma_cells, symmetric = TRUE)$vectors[, length(cells_id)]
+            denom <- as.numeric(mahalanobis(t(eigen_vec), center = mu_cells, cov = sigma_cells))
+            
+            x_train[row_id, cells_id] <- gamma * sqrt(length(cells_id)) * t(eigen_vec) / sqrt(denom)
           } else {
-            # Fallback for a single cell outlier (can't have correlation structure of size 1)
-            x_train[row_id, cells_id] <- gamma * 3 # Simple marginal shift
+            # Fallback for a single cell outlier
+            x_train[row_id, cells_id] <- gamma * 3 
           }
         }
       }
@@ -143,26 +140,17 @@ generateData <- function(N,
         }
       }
     
-      # Cellwise Marginal Contamination (Remaining rows)
+      # Cellwise Marginal Contamination (Remaining rows) - X ONLY
       if (n - n.casewise > 0) {
-        contamination_indices <- sample(1:((n - n.casewise) * (p + 1)), 
-                                        round((n - n.casewise) * (p + 1) * contamination.prop[2]))
-        xy_train <-  cbind(xlist[[i]], ylist[[i]])
         subset_idx <- (n.casewise + 1):n
+        sub_x <- xlist[[i]][subset_idx, , drop = FALSE]
+        n_sub <- nrow(sub_x)
         
-        # We need to correctly index the subset matrix
-        sub_matrix <- xy_train[subset_idx, ]
-        sub_matrix[contamination_indices] <- NA
+        contamination_indices <- sample.int(n_sub * p, round(n_sub * p * contamination.prop[2]))
+        sub_x[contamination_indices] <- rnorm(length(contamination_indices), cell.mean, 1)
         
-        for(row_id in 1:nrow(sub_matrix)){
-          cells_id <- which(is.na(sub_matrix[row_id,]))
-          if (length(cells_id) > 0) {
-            sub_matrix[row_id, cells_id] <- rnorm(length(cells_id), cell.mean, 1)
-          }
-        }
-        xy_train[subset_idx, ] <- sub_matrix
-        xlist[[i]] <- xy_train[, -(p + 1)]
-        ylist[[i]] <- xy_train[, (p + 1)]
+        xlist[[i]][subset_idx, ] <- sub_x
+        # ylist[[i]] remains unchanged for these rows
       }
     }
     
@@ -185,30 +173,29 @@ generateData <- function(N,
       
       # Cellwise Correlation Contamination (Remaining rows)
       if (n - n.casewise > 0) {
-        contamination_indices <- sample(1:((n - n.casewise) * p), 
-                                        round((n - n.casewise) * p * contamination.prop[2]))
-        x_train <-  xlist[[i]]
         subset_idx <- (n.casewise + 1):n
+        sub_matrix <- xlist[[i]][subset_idx, , drop = FALSE]
+        n_sub <- nrow(sub_matrix)
         
-        sub_matrix <- x_train[subset_idx, ]
+        contamination_indices <- sample.int(n_sub * p, round(n_sub * p * contamination.prop[2]))
         sub_matrix[contamination_indices] <- NA
         
-        for(row_id in 1:nrow(sub_matrix)){
+        for(row_id in 1:n_sub){
           cells_id <- which(is.na(sub_matrix[row_id,]))
           if(length(cells_id) > 0) {
             if (length(cells_id) > 1) {
               mu_cells <- rep(0, length(cells_id))
               sigma_cells <- sigma.mat[cells_id, cells_id, drop=FALSE]
-              eigen_vec <- eigen(sigma_cells)$vectors[, length(cells_id)]
-              sub_matrix[row_id, cells_id] <- gamma * sqrt(length(cells_id)) * t(eigen_vec) /
-                sqrt(mahalanobis(t(eigen_vec), mu_cells, sigma_cells))
+              eigen_vec <- eigen(sigma_cells, symmetric = TRUE)$vectors[, length(cells_id)]
+              denom <- as.numeric(mahalanobis(t(eigen_vec), center = mu_cells, cov = sigma_cells))
+              
+              sub_matrix[row_id, cells_id] <- gamma * sqrt(length(cells_id)) * t(eigen_vec) / sqrt(denom)
             } else {
               sub_matrix[row_id, cells_id] <- gamma * 3
             }
           }
         }
-        x_train[subset_idx, ] <- sub_matrix
-        xlist[[i]] <- x_train
+        xlist[[i]][subset_idx, ] <- sub_matrix
       }
     }
   }
