@@ -20,8 +20,8 @@ The core methodology (the FSCRE algorithm) is implemented in the `srlars` R pack
     *   **Execution Scripts:**
         *   `Generate_Results.R`: The main execution script for the full simulation study. It iterates over all scenarios, SNRs, and parameter grids.
         *   `Generate_CPU_Results.R`: Script to conduct the computational scalability study, measuring execution time across varying dimensions ($p$) and sample sizes ($n$).
-        *   `Sensitivity_Study.R`: Script to conduct the empirical sensitivity analysis for the number of sub-models, evaluating MSPE, Recall, and Precision, and generating the supplementary figure.
-        *   `Application_TCGA.R`: Script to reproduce the Proteogenomics (TCGA BRCA) real data application (predicting protein abundance from mRNA).
+        *   `Generate_Sensitivity_Results.R`: Script to conduct the empirical sensitivity analysis for the number of sub-models, evaluating MSPE, Recall, and Precision, and generating the supplementary figure.
+        *   `Generate_Application_Results.R`: Script to reproduce the Proteogenomics (TCGA BRCA) real data application (predicting protein abundance from mRNA).
         *   `Test_Runner.R`: A lightweight, miniaturized script to verify the simulation pipeline locally before cluster deployment.
         
     *   **Visualization & Reporting:**
@@ -71,7 +71,7 @@ Rscript R/Generate_CPU_Results.R
 To reproduce the supplementary sensitivity analysis evaluating the impact of the number of sub-models ($K$) on FSCRE's predictive accuracy and variable selection, run the sensitivity script. This script evaluates $K$ from 1 to 20 and will automatically output the corresponding 3x3 facet grid figure (`FSCRE_K_Sensitivity.pdf`) into the `figures/` directory.
 
 ```bash
-Rscript R/Sensitivity_Study.R
+Rscript R/Generate_Sensitivity_Results.R
 ```
 
 ### 5. Bioinformatics Data Application
