@@ -78,7 +78,7 @@ Rscript R/Generate_Sensitivity_Results.R
 To reproduce the empirical results on real-world genomic data, run the application script. This script automatically downloads the necessary multi-omics data, performs intersections, introduces targeted artificial contamination for robustness testing, and evaluates the models.
 
 ```bash
-Rscript R/Application_TCGA.R
+Rscript R/Generate_Application_Results.R
 ```
 
 Results will be saved as `.rds` files in the `results/` directory.
@@ -90,7 +90,8 @@ Once the execution scripts have completed and populated the `results/` directory
 The output will be saved into a `figures/` directory.
 
 ```bash
-Rscript R/Plot_Table_Simulation_Results.R
+Rscript R/Table_Simulation_Results.R
+Rscript R/Plot_Simulation_Results.R
 Rscript R/Plot_CPU_Results.R
 Rscript R/Plot_Application_Results.R
 ```
