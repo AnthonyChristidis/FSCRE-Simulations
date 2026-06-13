@@ -9,6 +9,7 @@ rm(list = ls())
 library(mvnfast)
 library(glmnet)
 library(cellWise)
+library(randomGLM)
 library(srlars)
 
 # -------------------------------------------
@@ -36,7 +37,7 @@ k_slo <- 100
 
 # FSCRE parameters
 n_models <- 10
-sim_tolerance <- 1e-5
+sim_tolerance <- 1e-8 # Strict, non-negative tolerance
 
 # ___________________________
 # Define Full Grid Settings
@@ -123,6 +124,7 @@ for (i in 1:nrow(settings)) {
     
     # Clean Data
     x_train <- mvnfast::rmvn(n, mu = rep(0, p), sigma = sigma.mat)
+    colnames(x_train) <- paste0("V", 1:p) # Ensure colnames for DDC compatibility
     y_train <- as.numeric(x_train %*% trueBeta + rnorm(n, 0, sigma_val))
     
     # 1. Casewise Contamination (Vectorized)
@@ -135,7 +137,6 @@ for (i in 1:nrow(settings)) {
       A_mat <- t(apply(A_mat, 1, function(x) x - mean(x)))
       
       # Compute scale factor for each row: a^T * inv(Sigma) * a
-      # diag(A * inv_Sigma * A^T) gives the values for all rows efficiently
       scale_factors <- sqrt(rowSums((A_mat %*% inv_sigma) * A_mat))
       
       # Generate multivariate normal noise for all contaminated rows at once
@@ -156,9 +157,6 @@ for (i in 1:nrow(settings)) {
       contam_cols <- sample(1:p, n_cells_to_contaminate, replace = TRUE)
       
       # 2. Apply adversarial shift based on global smallest eigenvector
-      # We shift the selected cell by a factor proportional to its corresponding
-      # component in the global direction of least variance.
-      # This completely bypasses row-level eigen decompositions.
       shifts <- gamma * 3 * global_e_min[contam_cols]
       
       # Apply the shifts vectorized
@@ -174,7 +172,12 @@ for (i in 1:nrow(settings)) {
         fit_fscre <- srlars(x_train, y_train, 
                             n_models = n_models, 
                             tolerance = sim_tolerance, 
-                            robust = TRUE, 
+                            x_preprocess = "ddc",
+                            y_preprocess = "wrap",
+                            cor_estimator = "wrap",
+                            cv_preprocess = "global",
+                            cv_fit = "huber",
+                            cv_loss = "huber",
                             compute_coef = TRUE)
       })
     })["elapsed"]
@@ -182,29 +185,60 @@ for (i in 1:nrow(settings)) {
     setting_results_list[[counter]] <- data.frame(n = n, p = p, Method = "FSCRE", Rep = rep, Time = unname(time_fscre))
     counter <- counter + 1
     
-    # _____________________________
-    # C. Timing DDC + Elastic Net
-    # _____________________________
+    # ______________________________________
+    # C. Timing Baseline Data Cleaning (DDC)
+    # ______________________________________
     
-    time_ddc_en <- system.time({
+    time_ddc <- system.time({
       suppressWarnings({
-        # Shared DDC Imputation
-        ddc_out <- cellWise::DDC(cbind(x_train, y_train), DDCpars = list(fastDDC = TRUE, silent = TRUE))
-        x_imp <- ddc_out$Ximp[, 1:p, drop=FALSE]
-        y_imp <- ddc_out$Ximp[, p+1]
+        # DDC Imputation on X ONLY
+        ddc_out <- cellWise::DDC(x_train, DDCpars = list(fastDDC = TRUE, silent = TRUE))
+        x_imp <- ddc_out$Ximp
         
-        # Elastic Net
-        fit_en <- cv.glmnet(x = x_imp, y = y_imp, alpha = 0.5)
+        # Wrap response univariately
+        y_imp <- as.numeric(cellWise::wrap(as.matrix(y_train))$Xw)
       })
     })["elapsed"]
     
-    setting_results_list[[counter]] <- data.frame(n = n, p = p, Method = "DDC_EN", Rep = rep, Time = unname(time_ddc_en))
+    # _____________________________
+    # D. Timing DDC + Elastic Net
+    # _____________________________
+    
+    time_en <- system.time({
+      suppressWarnings({
+        fit_en <- glmnet::cv.glmnet(x = x_imp, y = y_imp, alpha = 0.5)
+      })
+    })["elapsed"]
+    
+    # Total pipeline time = DDC preprocessing + EN fitting
+    total_time_ddc_en <- time_ddc + time_en
+    setting_results_list[[counter]] <- data.frame(n = n, p = p, Method = "DDC_EN", Rep = rep, Time = unname(total_time_ddc_en))
+    counter <- counter + 1
+    
+    # ___________________________
+    # E. Timing DDC + Random GLM
+    # ___________________________
+    
+    time_rglm <- system.time({
+      suppressWarnings({
+        fit_rglm <- randomGLM::randomGLM(x_imp, y_imp, 
+                                         classify = FALSE, 
+                                         nBags = 100, 
+                                         keepModels = TRUE, 
+                                         nThreads = 1, 
+                                         verbose = 0)
+      })
+    })["elapsed"]
+    
+    # Total pipeline time = DDC preprocessing + RGLM fitting
+    total_time_ddc_rglm <- time_ddc + time_rglm
+    setting_results_list[[counter]] <- data.frame(n = n, p = p, Method = "DDC_RGLM", Rep = rep, Time = unname(total_time_ddc_rglm))
     counter <- counter + 1
     
   } # End Reps
   
   # _________________________________________
-  # D. Save Results for this (n, p) setting
+  # F. Save Results for this (n, p) setting
   # _________________________________________
   
   setting_results_df <- do.call(rbind, setting_results_list)
