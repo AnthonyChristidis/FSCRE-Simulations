@@ -233,7 +233,7 @@ for (target_protein in proteins_to_run) {
     cat(sprintf("  Split %d / %d...\n", i, N_splits))
     
     # Train/Test Split
-    train_idx <- sample(1:nrow(y), 50)
+    train_idx <- sample(1:length(y), 50)
     
     x_tr_raw <- X_filtered[train_idx, ]
     y_tr_raw <- y[train_idx]
