@@ -38,8 +38,6 @@ data_file <- "data/TCGA_BRCA_Matched.rds"
 if(!file.exists(data_file)) {
   cat("Downloading TCGA BRCA data (may take a minute)...\n")
   
-  # Download the specific assays. 
-  # version="2.1.1" is the latest stable release
   brca_data <- curatedTCGAData::curatedTCGAData(
     diseaseCode = "BRCA",
     assays = c("RNASeq2GeneNorm", "RPPAArray"),
@@ -47,10 +45,8 @@ if(!file.exists(data_file)) {
     dry.run = FALSE
   )
   
-  # TCGAutils helps match samples that have BOTH RNA and Protein data
   matched_data <- MultiAssayExperiment::intersectColumns(brca_data)
   
-  # Extract the matrices. 
   assay_names <- names(experiments(matched_data))
   rna_name <- assay_names[grep("RNASeq2GeneNorm", assay_names)]
   prot_name <- assay_names[grep("RPPAArray", assay_names)]
@@ -58,15 +54,12 @@ if(!file.exists(data_file)) {
   rna_mat <- t(assay(matched_data[[rna_name]]))
   prot_mat <- t(assay(matched_data[[prot_name]]))
   
-  # Clean up patient IDs so they match exactly
   rownames(rna_mat) <- substr(rownames(rna_mat), 1, 12)
   rownames(prot_mat) <- substr(rownames(prot_mat), 1, 12)
   
-  # Handle potential replicates
   rna_mat <- rna_mat[!duplicated(rownames(rna_mat)), ]
   prot_mat <- prot_mat[!duplicated(rownames(prot_mat)), ]
   
-  # Find exact intersection
   common_patients <- intersect(rownames(rna_mat), rownames(prot_mat))
   
   rna_mat <- rna_mat[common_patients, ]
@@ -88,19 +81,20 @@ if(!file.exists(data_file)) {
 # Define Model Evaluation Helper 
 # _______________________________
 
-# Helper modified to return BOTH MSPE and selected variables
 runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
   
   p <- ncol(x_tr)
   mspe_results <- c()
   selected_vars <- list()
   
+  # Ensure column names exist for DDCpredict compatibility
+  colnames(x_tr) <- paste0("V", 1:p)
+  colnames(x_te) <- paste0("V", 1:p)
+  
   # 1. Elastic Net (EN)
   tryCatch({
     fit <- cv.glmnet(x = x_tr, y = y_tr, alpha = 3/4)
     mspe_results["ElasticNet"] <- mean((predict(fit, x_te, s = "lambda.min") - y_te)^2)
-    
-    # Extract non-zero coefficients (excluding intercept)
     coefs <- as.numeric(coef(fit, s = "lambda.min"))[-1]
     selected_vars[["ElasticNet"]] <- colnames(x_tr)[which(coefs != 0)]
   }, error = function(e) {
@@ -108,22 +102,31 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
     selected_vars[["ElasticNet"]] <<- character(0)
   })
   
-  # Shared DDC Imputation for Baselines
+  # _____________________________________________________________
+  # Shared Data Cleaning for DDC baselines (X-Only, No Leakage)
+  # _____________________________________________________________
+
   x_imp <- x_tr
   y_imp <- y_tr
+  x_te_imp <- x_te
+  
   tryCatch({
-    ddc_out <- cellWise::DDC(cbind(x_tr, y_tr), DDCpars = list(fastDDC = TRUE, silent = TRUE))
-    x_imp <<- ddc_out$Ximp[, 1:p]   
-    y_imp <<- ddc_out$Ximp[, p+1]
-  }, error = function(e) {
-    # If DDC fails, x_imp and y_imp remain the uncleaned x_tr and y_tr
-  })
+    # Clean predictors ONLY
+    ddc_out <- cellWise::DDC(x_tr, DDCpars = list(fastDDC = TRUE, silent = TRUE))
+    x_imp <<- ddc_out$Ximp
+    
+    # Apply DDC model to test set
+    ddc_test <- cellWise::DDCpredict(x_te, ddc_out)
+    x_te_imp <<- ddc_test$Ximp
+    
+    # Univariate wrap for response
+    y_imp <<- as.numeric(cellWise::wrap(as.matrix(y_tr))$Xw)
+  }, error = function(e) {})
   
   # 2. DDC + EN
   tryCatch({
     fit <- cv.glmnet(x = x_imp, y = y_imp, alpha = 3/4)
-    mspe_results["DDC_EN"] <- mean((predict(fit, x_te, s = "lambda.min") - y_te)^2)
-    
+    mspe_results["DDC_EN"] <- mean((predict(fit, x_te_imp, s = "lambda.min") - y_te)^2)
     coefs <- as.numeric(coef(fit, s = "lambda.min"))[-1]
     selected_vars[["DDC_EN"]] <- colnames(x_imp)[which(coefs != 0)]
   }, error = function(e) {
@@ -134,9 +137,7 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
   # 3. DDC + Random GLM
   tryCatch({
     fit <- randomGLM(x_imp, y_imp, classify = FALSE, nBags = 100, keepModels = TRUE, nThreads = 1, verbose = 0)
-    mspe_results["DDC_RGLM"] <- mean((predict(fit, newdata = x_te) - y_te)^2)
-    
-    # Extract variables selected in > 0 bags
+    mspe_results["DDC_RGLM"] <- mean((predict(fit, newdata = x_te_imp) - y_te)^2)
     sel_counts <- colSums(fit$timesSelectedByForwardRegression)
     selected_vars[["DDC_RGLM"]] <- colnames(x_imp)[which(sel_counts > 0)]
   }, error = function(e) {
@@ -149,7 +150,6 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
     fit <- sparseshooting(x = x_tr, y = y_tr, wvalue = 3, nlambda = 50)
     preds <- fit$coef[1] + x_te %*% fit$coef[-1]
     mspe_results["Sparse_S"] <- mean((preds - y_te)^2)
-    
     coefs <- fit$coef[-1]
     selected_vars[["Sparse_S"]] <- colnames(x_tr)[which(coefs != 0)]
   }, error = function(e) {
@@ -162,7 +162,6 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
     fit <- regcell::sregcell_std(y_tr, x_tr)
     preds <- fit$intercept_hat + x_te %*% fit$betahat
     mspe_results["CR_Lasso"] <- mean((preds - y_te)^2)
-    
     coefs <- fit$betahat
     selected_vars[["CR_Lasso"]] <- colnames(x_tr)[which(coefs != 0)]
   }, error = function(e) {
@@ -172,10 +171,10 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
   
   # 6. RLARS (Proposed, K=1)
   tryCatch({
-    fit <- srlars(x_tr, y_tr, n_models = 1, tolerance = 0.01, robust = TRUE, compute_coef = TRUE)
-    mspe_results["RLARS"] <- mean((predict(fit, newx = x_te, dynamic = FALSE) - y_te)^2)
-    
-    # For K=1, active.sets is a list of length 1
+    fit <- srlars(x_tr, y_tr, n_models = 1, tolerance = 1e-8, 
+                  x_preprocess = "ddc", y_preprocess = "wrap", cor_estimator = "wrap",
+                  cv_preprocess = "global", cv_fit = "huber", cv_loss = "huber", compute_coef = TRUE)
+    mspe_results["RLARS"] <- mean((predict(fit, newx = x_te) - y_te)^2)
     selected_vars[["RLARS"]] <- colnames(x_tr)[fit$active.sets[[1]]]
   }, error = function(e) {
     mspe_results["RLARS"] <<- NA
@@ -184,10 +183,10 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
   
   # 7. FSCRE (Proposed, K=10)
   tryCatch({
-    fit <- srlars(x_tr, y_tr, n_models = 10, tolerance = 0.01, robust = TRUE, compute_coef = TRUE)
-    mspe_results["FSCRE"] <- mean((predict(fit, newx = x_te, dynamic = FALSE) - y_te)^2)
-    
-    # For K=10, active.sets is a list of K vectors. We want all unique genes selected across the ensemble.
+    fit <- srlars(x_tr, y_tr, n_models = 10, tolerance = 1e-8, 
+                  x_preprocess = "ddc", y_preprocess = "wrap", cor_estimator = "wrap",
+                  cv_preprocess = "global", cv_fit = "huber", cv_loss = "huber", compute_coef = TRUE)
+    mspe_results["FSCRE"] <- mean((predict(fit, newx = x_te) - y_te)^2)
     all_selected_idx <- unique(unlist(fit$active.sets))
     selected_vars[["FSCRE"]] <- colnames(x_tr)[all_selected_idx]
   }, error = function(e) {
@@ -195,10 +194,7 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
     selected_vars[["FSCRE"]] <<- character(0)
   })
   
-  # Prepend prefix to names for MSPE
   names(mspe_results) <- paste0(prefix, "_", names(mspe_results))
-  
-  # We return a list containing both the MSPE vector and the list of selected variables
   return(list(mspe = mspe_results, vars = selected_vars))
 }
 
@@ -216,62 +212,60 @@ for (target_protein in proteins_to_run) {
   cat(sprintf("STARTING ANALYSIS FOR TARGET PROTEIN: %s\n", target_protein))
   cat(sprintf("*******************************************************\n"))
   
-  # _______________________
-  # Define Prediction Task 
-  # _______________________
-  
   if (!(target_protein %in% colnames(prot_mat))) {
     warning("Target protein ", target_protein, " not found. Skipping.")
     next
   }
   
   y_full <- prot_mat[, target_protein]
-  
-  # Remove any NAs in the target protein
   valid_y_idx <- which(!is.na(y_full))
   y <- y_full[valid_y_idx]
   X_full <- rna_mat[valid_y_idx, ]
   
-  # Filter Predictors (X):
-  # 1. Remove genes with zero variance or very low expression
+  # Remove genes with near-zero variance globally just to drop empty columns
   gene_vars <- apply(X_full, 2, var)
-  valid_genes <- which(gene_vars > 1e-4)
-  X_filtered <- X_full[, valid_genes]
-  
-  # 2. Correlation filter to ensure strong baseline signal
-  cat("Filtering to top 500 most correlated genes...\n")
-  gene_corrs <- abs(apply(X_filtered, 2, function(x) cor(x, y)))
-  gene_corrs[is.na(gene_corrs)] <- 0
-  top_genes <- order(gene_corrs, decreasing = TRUE)[1:500]
-  X <- X_filtered[, top_genes]
-  
-  # Standardize predictors and response
-  X <- scale(X)
-  y <- scale(y) 
-  
-  cat(sprintf("Data Dimensions for %s: n = %d, p = %d\n", target_protein, nrow(X), ncol(X)))
-  
-  # ________________
-  # Simulation Loop
-  # ________________
+  X_filtered <- X_full[, which(gene_vars > 1e-4)]
   
   mspe_list <- list()
-  
-  # We will store the selected variables across all splits in a nested list
-  # Structure: vars_list[[split_idx]][["Orig" or "Contam"]][["MethodName"]]
   vars_list <- list() 
   
   for (i in 1:N_splits) {
     cat(sprintf("  Split %d / %d...\n", i, N_splits))
     
     # Train/Test Split
-    # Note: Using a fixed n_train = 50 to maintain the extreme p >> n setting as discussed
     train_idx <- sample(1:nrow(y), 50)
     
-    x_train <- X[train_idx, ]
-    y_train <- y[train_idx]
-    x_test <- X[-train_idx, ]
-    y_test <- y[-train_idx]
+    x_tr_raw <- X_filtered[train_idx, ]
+    y_tr_raw <- y[train_idx]
+    x_te_raw <- X_filtered[-train_idx, ]
+    y_te_raw <- y[-train_idx]
+    
+    # ________________________________________________
+    # STRICT LEAKAGE-FREE FEATURE SCREENING & SCALING
+    # ________________________________________________
+    
+    # 1. Correlation filter on Training Data ONLY
+    gene_corrs <- abs(apply(x_tr_raw, 2, function(col) cor(col, y_tr_raw)))
+    gene_corrs[is.na(gene_corrs)] <- 0
+    top_genes <- order(gene_corrs, decreasing = TRUE)[1:500]
+    
+    x_train <- x_tr_raw[, top_genes]
+    x_test  <- x_te_raw[, top_genes]
+    
+    # 2. Scale using Training Data parameters ONLY
+    tr_means <- apply(x_train, 2, mean)
+    tr_sds   <- apply(x_train, 2, sd)
+    
+    # Handle rare cases where SD is 0 after subsetting
+    tr_sds[tr_sds == 0] <- 1 
+    
+    x_train <- scale(x_train, center = tr_means, scale = tr_sds)
+    x_test  <- scale(x_test, center = tr_means, scale = tr_sds)
+    
+    y_mean <- mean(y_tr_raw)
+    y_sd   <- sd(y_tr_raw)
+    y_train <- as.numeric(scale(y_tr_raw, center = y_mean, scale = y_sd))
+    y_test  <- as.numeric(scale(y_te_raw, center = y_mean, scale = y_sd))
     
     # A. Run on ORIGINAL Data
     res_orig <- runModels(x_train, y_train, x_test, y_test, prefix = "Orig")
@@ -279,32 +273,24 @@ for (target_protein in proteins_to_run) {
     # B. Introduce TARGETED Artificial Contamination 
     x_train_cont <- x_train
     
-    # 1. Identify the "most important" variables from a quick, clean EN fit
     quick_en <- cv.glmnet(x_train, y_train, alpha = 3/4)
     clean_coefs <- as.numeric(coef(quick_en, s = "lambda.min"))[-1]
     
-    # Get the indices of the top 30 most important genes
     n_top_genes <- min(30, sum(clean_coefs != 0))
     if (n_top_genes == 0) n_top_genes <- 30 
     top_var_indices <- order(abs(clean_coefs), decreasing = TRUE)[1:n_top_genes]
     
-    # 2. Poison ONLY these important variables
-    # Corrupt 15% of the cells within these specific important columns
     n_to_corrupt <- round(0.15 * nrow(x_train))
     
     for (j in top_var_indices) {
         corrupt_rows <- sample(1:nrow(x_train), n_to_corrupt)
-        # Data is scaled (mean 0, SD 1), so +/- 10 is a massive outlier
         x_train_cont[corrupt_rows, j] <- sample(c(10, -10), n_to_corrupt, replace = TRUE)
     }
     
     # Run on CONTAMINATED Data
     res_cont <- runModels(x_train_cont, y_train, x_test, y_test, prefix = "Contam")
     
-    # Store MSPE results
     mspe_list[[i]] <- c(res_orig$mspe, res_cont$mspe)
-    
-    # Store Variable Selection results
     vars_list[[i]] <- list(Orig = res_orig$vars, Contam = res_cont$vars)
   }
   
@@ -317,14 +303,11 @@ for (target_protein in proteins_to_run) {
   cat(sprintf("\n--- FINAL RESULTS for %s (Average MSPE) ---\n", target_protein))
   print(round(colMeans(final_mspe_df, na.rm = TRUE), 4))
   
-  # Clean filename
   safe_protein_name <- gsub("-", "_", target_protein)
   
-  # Save MSPE
   mspe_filename <- sprintf("results/Application_TCGA_%s_MSPE.rds", safe_protein_name)
   saveRDS(final_mspe_df, mspe_filename)
   
-  # Save Variables
   vars_filename <- sprintf("results/Application_TCGA_%s_Genes.rds", safe_protein_name)
   saveRDS(vars_list, vars_filename)
   
