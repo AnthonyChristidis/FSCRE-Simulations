@@ -87,10 +87,6 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
   mspe_results <- c()
   selected_vars <- list()
   
-  # Ensure column names exist for DDCpredict compatibility
-  colnames(x_tr) <- paste0("V", 1:p)
-  colnames(x_te) <- paste0("V", 1:p)
-  
   # 1. Elastic Net (EN)
   tryCatch({
     fit <- cv.glmnet(x = x_tr, y = y_tr, alpha = 3/4)
@@ -102,10 +98,7 @@ runModels <- function(x_tr, y_tr, x_te, y_te, prefix) {
     selected_vars[["ElasticNet"]] <<- character(0)
   })
   
-  # _____________________________________________________________
-  # Shared Data Cleaning for DDC baselines (X-Only, No Leakage)
-  # _____________________________________________________________
-
+  # --- Shared Data Cleaning for DDC baselines (X-Only, No Leakage) ---
   x_imp <- x_tr
   y_imp <- y_tr
   x_te_imp <- x_te
