@@ -121,7 +121,7 @@ if (!dir.exists("figures")) dir.create("figures")
 # --- FIGURE 1: MSPE Plot (1x3 Facets) ---
 
 # Filter specifically for the MSPE methods (excluding RLARS to avoid clutter)
-df_mspe <- plot_data %>% filter(Method %in% c("DDC-EN", "DDC-RGLM", "FSCRE"))
+df_mspe <- plot_data |> filter(Method %in% c("DDC-EN", "DDC-RGLM", "FSCRE"))
 
 # Calculate dynamic y-axis limits to trim ONLY the most extreme, scale-breaking outliers.
 max_y_limit <- quantile(df_mspe$MSPE, 0.99, na.rm = TRUE) * 1.1
@@ -142,18 +142,18 @@ ggsave("figures/Simulation_MSPE_Grid.pdf", plot = p_mspe, width = 12, height = 5
 
 # --- FIGURE 2: Recall and Precision Plot (2x3 Facets) ---
 
-# Filter strictly for DDC-EN and FSCRE to show the stark contrast in selection
-df_rcpr <- plot_data %>% filter(Method %in% c("DDC-EN", "FSCRE"))
+# Filter to include DDC-EN, RLARS, and FSCRE
+df_rcpr <- plot_data |> filter(Method %in% c("DDC-EN", "RLARS", "FSCRE"))
 
 # Melt the data so RC and PR are in the same column for faceting
-df_rcpr_long <- df_rcpr %>%
+df_rcpr_long <- df_rcpr |>
   pivot_longer(cols = c(Recall, Precision), names_to = "Metric", values_to = "Value")
 
 # Order the metric factor so Recall is top row, Precision is bottom row
 df_rcpr_long$Metric <- factor(df_rcpr_long$Metric, levels = c("Recall", "Precision"))
 
 p_rcpr <- ggplot(df_rcpr_long, aes(x = Sparsity_Label, y = Value, fill = Method)) +
-  geom_boxplot(width = 0.5, outlier.size = 1.5, outlier.alpha = 0.6, outlier.shape = 21, alpha = 0.9, color = "black", linewidth = 0.6) +
+  geom_boxplot(width = 0.6, outlier.size = 1.5, outlier.alpha = 0.6, outlier.shape = 21, alpha = 0.9, color = "black", linewidth = 0.6) +
   facet_grid(Metric ~ SNR_Label, scales = "free_y") + 
   scale_fill_manual(values = fill_colors) +
   labs(
