@@ -48,8 +48,8 @@ summary_df <- full_timing_df %>%
 
 # Rename methods for the plot legend
 summary_df$Method <- factor(summary_df$Method, 
-                            levels = c("FSCRE", "DDC_EN"), 
-                            labels = c("FSCRE", "DDC-EN"))
+                            levels = c("FSCRE", "DDC_EN", "DDC_RGLM"), 
+                            labels = c("FSCRE", "DDC-EN", "DDC-RGLM"))
 
 # --- Themes and colors ---
 
@@ -69,10 +69,11 @@ pub_theme <- theme_bw() +
     panel.grid.major = element_line(color = "grey85") # Keeps grid helpful for log-log scales
   )
 
-# Sync colors with the Boxplots (FSCRE = Deep Blue, DDC-EN = Rust)
+# Sync colors with the Boxplots (FSCRE = Deep Blue, DDC-EN = Rust, DDC-RGLM = Golden Yellow)
 line_colors <- c(
-  "FSCRE"  = "#0072B2",
-  "DDC-EN" = "#D55E00"
+  "FSCRE"    = "#0072B2",
+  "DDC-EN"   = "#D55E00",
+  "DDC-RGLM" = "#E69F00"
 )
 
 # _________________
@@ -91,8 +92,8 @@ plot_p <- ggplot(df_p, aes(x = p, y = Median_Time, group = Method, color = Metho
   scale_x_log10(breaks = c(50, 100, 500, 1000, 5000)) +
   scale_y_log10() +
   scale_color_manual(values = line_colors) +
-  scale_shape_manual(values = c(16, 15)) +     # 16 = Solid Circle, 15 = Solid Square
-  scale_linetype_manual(values = c("solid", "dashed")) +
+  scale_shape_manual(values = c(16, 15, 17)) +     # 16 = Circle, 15 = Square, 17 = Triangle
+  scale_linetype_manual(values = c("solid", "dashed", "dotted")) +
   labs(
     x = expression(bold("Number of Predictors (") * italic(p) * bold(")")),
     y = "Median CPU Time (Seconds)"
@@ -109,8 +110,8 @@ plot_n <- ggplot(df_n, aes(x = n, y = Median_Time, group = Method, color = Metho
   scale_x_log10(breaks = c(50, 100, 200, 500)) +
   scale_y_log10() +
   scale_color_manual(values = line_colors) +
-  scale_shape_manual(values = c(16, 15)) +
-  scale_linetype_manual(values = c("solid", "dashed")) +
+  scale_shape_manual(values = c(16, 15, 17)) +
+  scale_linetype_manual(values = c("solid", "dashed", "dotted")) +
   labs(
     x = expression(bold("Sample Size (") * italic(n) * bold(")")), 
     y = "Median CPU Time (Seconds)"
