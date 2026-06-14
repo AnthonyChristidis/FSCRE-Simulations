@@ -95,9 +95,9 @@ pub_theme <- theme_bw() +
 fscre_color <- "#0072B2"
 rlars_color <- "#D55E00"
 
-# _____________________
+# _______________________
 # 3. Generate the Figure
-# _____________________
+# _______________________
 
 if (!dir.exists("figures")) dir.create("figures")
 
