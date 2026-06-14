@@ -10,12 +10,14 @@ The core methodology (the FSCRE algorithm) is implemented in the `srlars` R pack
 ## Repository Structure
 
 *   **`R/`**: Contains all R code, organized into the following components:
+
+    *   **Packages Installer:**
+        *   `Install_Dependencies.R`: Setup script to automatically install all required CRAN, Bioconductor, and GitHub packages.
     
-    *   **Core Framework & Helpers:**
+    *   **Core Helpers:**
         *   `generateData.R`: Generates high-dimensional data with block-collinearity and applies 5 distinct contamination scenarios (Casewise, Cellwise Marginal, Cellwise Correlation, and Mixtures).
         *   `generatePred.R`: Fits the FSCRE algorithm alongside all baseline and state-of-the-art competitor methods, returning performance metrics.
         *   `simFunc.R` & `generateOutput.R`: Wrapper functions to iterate over sparsity levels, contamination proportions, and repetitions.
-        *   `Install_Dependencies.R`: Setup script to automatically install all required CRAN, Bioconductor, and GitHub packages.
 
     *   **Execution Scripts:**
         *   `Generate_Results.R`: The main execution script for the full simulation study. It iterates over all scenarios, SNRs, and parameter grids.
@@ -29,6 +31,7 @@ The core methodology (the FSCRE algorithm) is implemented in the `srlars` R pack
         *   `Tables_Simulation_Results.R`: Aggregates simulation `.rds` files to generate the performance tables for the main manuscript.
         *   `Plot_CPU_Results.R`: Generates the log-log scalability plots from the CPU timing study.
         *   `Plot_Application_Results.R`: Generates the MSPE boxplots and extracts the gene selection frequency tables for the TCGA application.
+        *   `Plot_Sensitivity_Results.R`: Generates the sensitivity analysis plots for the number of sub-models.
 
 *   **`SparseShootingS/`**: Contains the author-provided implementation of the Sparse Shooting S-estimator.
 
@@ -94,6 +97,7 @@ Rscript R/Table_Simulation_Results.R
 Rscript R/Plot_Simulation_Results.R
 Rscript R/Plot_CPU_Results.R
 Rscript R/Plot_Application_Results.R
+Rscript R/Plot_Sensitivity_Results.R
 ```
 
 ## Citation
