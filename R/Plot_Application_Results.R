@@ -133,44 +133,75 @@ if(!file.exists(genes_file)) {
 genes_res <- readRDS(genes_file)
 n_splits <- length(genes_res)
 
+# Methods you want to summarize (must match names used in runModels() output)
+methods_all <- c("ElasticNet", "DDC_EN", "DDC_RGLM", "Sparse_S", "CR_Lasso", "RLARS", "FSCRE")
+conditions_all <- c("Orig", "Contam")
+
 get_selection_props <- function(results_list, condition, method) {
   all_genes_selected <- lapply(results_list, function(split) {
-    if (!is.null(split[[condition]][[method]])) {
+    # split is like: list(Orig = res_orig$vars, Contam = res_cont$vars)
+    if (!is.null(split[[condition]]) &&
+        !is.null(split[[condition]][[method]]) &&
+        length(split[[condition]][[method]]) > 0) {
       return(split[[condition]][[method]])
     } else {
       return(character(0))
     }
   })
-  
-  flat_genes <- unlist(all_genes_selected)
+
+  flat_genes <- unlist(all_genes_selected, use.names = FALSE)
+
+  if (length(flat_genes) == 0) {
+    return(setNames(numeric(0), character(0)))
+  }
+
   gene_counts <- table(flat_genes)
   gene_props <- gene_counts / n_splits
   return(gene_props)
 }
 
-props_fscre_contam <- get_selection_props(genes_res, "Contam", "FSCRE")
-props_en_contam <- get_selection_props(genes_res, "Contam", "ElasticNet")
-props_en_orig <- get_selection_props(genes_res, "Orig", "ElasticNet")
-props_ddc_en_contam <- get_selection_props(genes_res, "Contam", "DDC_EN")
+# 1) Compute proportions for every (condition, method)
+props_list <- list()
+for (cond in conditions_all) {
+  for (meth in methods_all) {
+    nm <- paste0(meth, "_", cond)
+    props_list[[nm]] <- get_selection_props(genes_res, cond, meth)
+  }
+}
 
-all_fscre_genes <- names(props_fscre_contam)
+# 2) Union of all genes that were ever selected by any method in any condition
+all_genes <- sort(unique(unlist(lapply(props_list, names), use.names = FALSE)))
 
-selection_table <- data.frame(
-  Gene = all_fscre_genes,
-  FSCRE_Contam = as.numeric(props_fscre_contam),
-  stringsAsFactors = FALSE
-)
+# 3) Build wide table: rows=genes, cols=Method_Orig / Method_Contam
+selection_table <- data.frame(Gene = all_genes, stringsAsFactors = FALSE)
 
-selection_table$DDC_EN_Contam <- as.numeric(props_ddc_en_contam[selection_table$Gene])
-selection_table$DDC_EN_Contam[is.na(selection_table$DDC_EN_Contam)] <- 0
+for (nm in names(props_list)) {
+  v <- props_list[[nm]]
+  selection_table[[nm]] <- as.numeric(v[selection_table$Gene])
+  selection_table[[nm]][is.na(selection_table[[nm]])] <- 0
+}
 
-selection_table$EN_Contam <- as.numeric(props_en_contam[selection_table$Gene])
-selection_table$EN_Contam[is.na(selection_table$EN_Contam)] <- 0
+# Optional: add a simple summary column (max selection rate across all columns)
+selection_table$MaxProp_Any <- apply(selection_table[, setdiff(names(selection_table), "Gene")], 1, max)
 
-selection_table$EN_Orig <- as.numeric(props_en_orig[selection_table$Gene])
-selection_table$EN_Orig[is.na(selection_table$EN_Orig)] <- 0
+# Optional: filter to keep table manageable (tweak threshold if desired)
+# selection_table <- subset(selection_table, MaxProp_Any >= 0.10)
 
-selection_table <- selection_table[order(selection_table$FSCRE_Contam, decreasing = TRUE), ]
+# 4) Sort & print: choose which column drives the ranking
+rank_col <- "FSCRE_Contam"   # change this if you want, e.g. "ElasticNet_Orig"
+if (!(rank_col %in% names(selection_table))) {
+  stop("rank_col not found in selection_table: ", rank_col)
+}
 
-cat("\nTop 20 Genes Selected by FSCRE under Targeted Contamination:\n")
-print(head(selection_table, 20), row.names = FALSE)
+selection_table <- selection_table[order(selection_table[[rank_col]], decreasing = TRUE), ]
+
+cat("\nTop 20 genes by ", rank_col, " (with Orig/Contam proportions for all methods):\n", sep = "")
+head(selection_table[, c("Gene",
+                          "FSCRE_Contam","FSCRE_Orig",
+                          "RLARS_Contam","RLARS_Orig",
+                          "ElasticNet_Contam","ElasticNet_Orig",
+                          "DDC_EN_Contam","DDC_EN_Orig",
+                          "DDC_RGLM_Contam","DDC_RGLM_Orig",
+                          "Sparse_S_Contam","Sparse_S_Orig",
+                          "CR_Lasso_Contam","CR_Lasso_Orig")],
+      row.names = FALSE, n = 20)
