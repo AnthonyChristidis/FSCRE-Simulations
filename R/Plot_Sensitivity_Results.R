@@ -61,9 +61,10 @@ plot_data <- summary_data |>
   select(K, p_active, MSPE, RC, PR) |>
   pivot_longer(cols = c(MSPE, RC, PR), names_to = "Metric", values_to = "Value")
 
+# FIX: Added '\n' to split "Prediction Error (MSPE)" onto two lines so it fits the facet strip
 plot_data$Metric <- factor(plot_data$Metric, 
                            levels = c("MSPE", "RC", "PR"), 
-                           labels = c("Prediction Error (MSPE)", "Recall", "Precision"))
+                           labels = c("Prediction Error\n(MSPE)", "Recall", "Precision"))
 
 plot_data$p_active <- factor(plot_data$p_active, 
                              levels = c("Active Predictors: 50 (10%)", 
