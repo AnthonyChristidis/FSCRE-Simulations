@@ -70,8 +70,8 @@ plot_data$p_active <- factor(plot_data$p_active,
                                         "Active Predictors: 100 (20%)", 
                                         "Active Predictors: 200 (40%)"))
 
-# Extract the RLARS Baseline (K=1) to plot as a horizontal line
-rlars_data <- plot_data |> filter(K == 1)
+# Extract the CellRLARS Baseline (K=1) to plot as a horizontal line
+cellrlars_data <- plot_data |> filter(K == 1)
 
 # 
 # --- PUBLICATION-READY THEME & COLORS ---
@@ -93,7 +93,7 @@ pub_theme <- theme_bw() +
   )
 
 fscre_color <- "#0072B2"
-rlars_color <- "#D55E00"
+cellrlars_color <- "#D55E00"
 
 # _______________________
 # 3. Generate the Figure
@@ -102,16 +102,16 @@ rlars_color <- "#D55E00"
 if (!dir.exists("figures")) dir.create("figures")
 
 p <- ggplot(plot_data, aes(x = K, y = Value)) +
-  # Add the RLARS (K=1) horizontal baseline
-  geom_hline(data = rlars_data, aes(yintercept = Value, linetype = "RLARS (Single Model)"), 
-             color = rlars_color, linewidth = 1) +
+  # Add the CellRLARS (K=1) horizontal baseline
+  geom_hline(data = cellrlars_data, aes(yintercept = Value, linetype = "CellRLARS (Single Model)"), 
+             color = cellrlars_color, linewidth = 1) +
   # Add the FSCRE curve
   geom_line(aes(color = "FSCRE (Ensemble)"), linewidth = 1.2) +
   geom_point(aes(color = "FSCRE (Ensemble)"), size = 2.5) +
   facet_grid(Metric ~ p_active, scales = "free_y") +
   scale_x_continuous(breaks = c(1, 5, 10, 15, 20)) +
   scale_color_manual(values = c("FSCRE (Ensemble)" = fscre_color)) +
-  scale_linetype_manual(values = c("RLARS (Single Model)" = "dashed")) +
+  scale_linetype_manual(values = c("CellRLARS (Single Model)" = "dashed")) +
   pub_theme +
   labs(
     x = expression(bold("Number of Models (") * italic(K) * bold(")")),

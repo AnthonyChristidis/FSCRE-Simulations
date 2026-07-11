@@ -25,6 +25,7 @@ scenario <- "mixture_correlation"
 contam_str <- "0.1_0.05"
 
 # Load ALL relevant methods so we can filter them specifically for different plots
+# Keeping "RLARS" here to extract data correctly from the RDS files
 methods_to_load <- c("DDC_EN", "DDC_RGLM", "RLARS", "FSCRE")
 df_list <- list()
 
@@ -67,10 +68,10 @@ plot_data <- do.call(rbind, df_list)
 
 cat("Formatting data...\n")
 
-# Standardize method names
+# Standardize method names. Notice "RLARS" is mapped to the label "CellRLARS" here.
 plot_data$Method <- factor(plot_data$Method, 
                            levels = c("DDC_EN", "DDC_RGLM", "RLARS", "FSCRE"),
-                           labels = c("DDC-EN", "DDC-RGLM", "RLARS", "FSCRE"))
+                           labels = c("DDC-EN", "DDC-RGLM", "CellRLARS", "FSCRE"))
 
 # Create nice labels for the facets
 plot_data$SNR_Label <- factor(plot_data$SNR,
@@ -103,11 +104,12 @@ pub_theme <- theme_bw() +
   )
 
 # Professional, colorblind-friendly palette (Okabe-Ito inspired)
+# Changed "RLARS" key to "CellRLARS" to match the factor labels
 fill_colors <- c(
-  "DDC-EN"   = "#D55E00",  # Rust / Vermilion (Strong baseline contrast)
-  "DDC-RGLM" = "#E69F00",  # Golden Yellow (Secondary baseline)
-  "RLARS"    = "#56B4E9",  # Sky Blue (Links it visually to the proposed method)
-  "FSCRE"    = "#0072B2"   # Deep Yale Blue (Authoritative, stable proposed method)
+  "DDC-EN"    = "#D55E00",  # Rust / Vermilion (Strong baseline contrast)
+  "DDC-RGLM"  = "#E69F00",  # Golden Yellow (Secondary baseline)
+  "CellRLARS" = "#56B4E9",  # Sky Blue (Links it visually to the proposed method)
+  "FSCRE"     = "#0072B2"   # Deep Yale Blue (Authoritative, stable proposed method)
 )
 
 # _________________
@@ -120,7 +122,7 @@ if (!dir.exists("figures")) dir.create("figures")
 
 # --- FIGURE 1: MSPE Plot (1x3 Facets) ---
 
-# Filter specifically for the MSPE methods (excluding RLARS to avoid clutter)
+# Filter specifically for the MSPE methods (excluding CellRLARS to avoid clutter)
 df_mspe <- plot_data |> filter(Method %in% c("DDC-EN", "DDC-RGLM", "FSCRE"))
 
 # Calculate dynamic y-axis limits to trim ONLY the most extreme, scale-breaking outliers.
@@ -142,8 +144,8 @@ ggsave("figures/Simulation_MSPE_Grid.pdf", plot = p_mspe, width = 12, height = 5
 
 # --- FIGURE 2: Recall and Precision Plot (2x3 Facets) ---
 
-# Filter to include DDC-EN, RLARS, and FSCRE
-df_rcpr <- plot_data |> filter(Method %in% c("DDC-EN", "RLARS", "FSCRE"))
+# Filter to include DDC-EN, CellRLARS, and FSCRE
+df_rcpr <- plot_data |> filter(Method %in% c("DDC-EN", "CellRLARS", "FSCRE"))
 
 # Melt the data so RC and PR are in the same column for faceting
 df_rcpr_long <- df_rcpr |>

@@ -41,7 +41,7 @@ melt_mspe <- function(mat) {
                           names_to = "Condition_Method", 
                           values_to = "MSPE")
   
-  df_long <- df_long %>%
+  df_long <- df_long |>
     separate(Condition_Method, into = c("Condition", "Method"), sep = "_", extra = "merge")
   
   return(df_long)
@@ -53,12 +53,14 @@ plot_data <- melt_mspe(er_res)
 # 3. Filter and Format Data for Plotting
 # _________________________________________
 
+# We keep "RLARS" here so it can extract from the RDS properly
 methods_to_keep <- c("ElasticNet", "DDC_EN", "DDC_RGLM", "RLARS", "FSCRE")
-plot_data <- plot_data %>% filter(Method %in% methods_to_keep)
+plot_data <- plot_data |> filter(Method %in% methods_to_keep)
 
+# We update the 'labels' argument to change "RLARS" to "CellRLARS" in the plot
 plot_data$Method <- factor(plot_data$Method, 
                            levels = c("ElasticNet", "DDC_EN", "DDC_RGLM", "RLARS", "FSCRE"),
-                           labels = c("EN", "DDC-EN", "DDC-RGLM", "RLARS", "FSCRE"))
+                           labels = c("EN", "DDC-EN", "DDC-RGLM", "CellRLARS", "FSCRE"))
 
 plot_data$Condition <- factor(plot_data$Condition, 
                               levels = c("Orig", "Contam"),
@@ -133,7 +135,7 @@ if(!file.exists(genes_file)) {
 genes_res <- readRDS(genes_file)
 n_splits <- length(genes_res)
 
-# Methods you want to summarize (must match names used in runModels() output)
+# Methods you want to summarize (keeping "RLARS" internally to match the RDS file keys)
 methods_all <- c("ElasticNet", "DDC_EN", "DDC_RGLM", "Sparse_S", "CR_Lasso", "RLARS", "FSCRE")
 conditions_all <- c("Orig", "Contam")
 
@@ -181,6 +183,9 @@ for (nm in names(props_list)) {
   selection_table[[nm]][is.na(selection_table[[nm]])] <- 0
 }
 
+# Rename RLARS columns to CellRLARS to match the manuscript
+names(selection_table) <- gsub("RLARS", "CellRLARS", names(selection_table))
+
 # Optional: add a simple summary column (max selection rate across all columns)
 selection_table$MaxProp_Any <- apply(selection_table[, setdiff(names(selection_table), "Gene")], 1, max)
 
@@ -198,7 +203,7 @@ selection_table <- selection_table[order(selection_table[[rank_col]], decreasing
 cat("\nTop 20 genes by ", rank_col, " (with Orig/Contam proportions for all methods):\n", sep = "")
 head(selection_table[, c("Gene",
                           "FSCRE_Contam","FSCRE_Orig",
-                          "RLARS_Contam","RLARS_Orig",
+                          "CellRLARS_Contam","CellRLARS_Orig",
                           "ElasticNet_Contam","ElasticNet_Orig",
                           "DDC_EN_Contam","DDC_EN_Orig",
                           "DDC_RGLM_Contam","DDC_RGLM_Orig",
